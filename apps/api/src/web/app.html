@@ -95,6 +95,17 @@
       <div class="text-start"><button id="btnRefreshSnapshots" class="btn btn-primary">Atualizar Lista</button></div>
     </section>
 
+    <section class="card p-4 mb-4">
+        <h5 class="card-title mb-3">Clonar Nova Árvore</h5>
+        <div class="row g-3">
+            <div class="col-md-4"><label for="rootHusband" class="form-label">ID do Marido (Raiz)</label><input id="rootHusband" class="form-control" placeholder="Obrigatório" /></div>
+            <div class="col-md-4"><label for="rootWife" class="form-label">ID da Esposa (Raiz)</label><input id="rootWife" class="form-control" placeholder="Opcional" /></div>
+            <div class="col-md-4"><label for="slug" class="form-label">Nome da Família</label><input id="slug" class="form-control" value="default"/></div>
+            <div class="col-md-3"><label for="descDepth" class="form-label">Gerações (desc.)</label><input id="descDepth" class="form-control" value="3" /></div>
+            <div class="col-md-5 d-grid"><button id="btnClone" class="btn btn-primary mt-auto" type="button">Clonar Snapshot do FS</button></div>
+        </div>
+    </section>
+
     <div id="familyContentContainer">
       <nav class="tab-nav">
         <button class="tab-link active" data-tab="tab-tree">Árvore</button>
@@ -106,16 +117,8 @@
       <div class="tab-content">
         <div id="tab-tree" class="tab-pane active">
           <section class="card p-4">
-            <h5 class="card-title mb-3">Clonar e Visualizar Árvore</h5>
-            <div class="row g-3">
-              <div class="col-md-4"><label for="rootHusband" class="form-label">ID do Marido (Raiz)</label><input id="rootHusband" class="form-control" placeholder="Obrigatório" /></div>
-              <div class="col-md-4"><label for="rootWife" class="form-label">ID da Esposa (Raiz)</label><input id="rootWife" class="form-control" placeholder="Opcional" /></div>
-              <div class="col-md-4"><label for="slug" class="form-label">Nome da Família</label><input id="slug" class="form-control" value="default"/></div>
-              <div class="col-md-3"><label for="descDepth" class="form-label">Gerações (desc.)</label><input id="descDepth" class="form-control" value="3" /></div>
-              <div class="col-md-5 d-grid"><button id="btnClone" class="btn btn-primary mt-auto" type="button">Clonar Snapshot do FS</button></div>
-              <div class="col-12 mt-3"><div id="graphWrap"><svg id="graph" width="1600" height="1000"></svg></div></div>
-            </div>
-            
+            <h5 class="card-title mb-3">Visualização da Árvore</h5>
+            <div id="graphWrap"><svg id="graph" width="1600" height="1000"></svg></div>
             <hr class="my-4">
             <h5 class="card-title mb-3">Encontrar Parentesco no Snapshot</h5>
             <div class="row g-3 align-items-end">
