@@ -7,8 +7,21 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
+# 1. Lê a URL do banco de dados da variável de ambiente do Render
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///wrfamily.db")
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+# 2. Corrige o prefixo da URL para o SQLAlchemy (específico para Heroku/Render)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# 3. Cria o engine de forma condicional
+if DATABASE_URL.startswith("sqlite"):
+    # Configuração para SQLite (desenvolvimento local)
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    # Configuração para PostgreSQL (produção no Render)
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
