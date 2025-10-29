@@ -28,7 +28,6 @@ pydantic-settings==2.11.0
 pydantic_core==2.41.4
 python-dotenv==1.1.1
 python-multipart==0.0.20
-pywin32==311
 RapidFuzz==3.14.1
 referencing==0.37.0
 requests==2.32.5
