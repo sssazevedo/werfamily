@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WeRfamily — App</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    :root{--bg:#f7f8fb;--card:#ffffff;--text:#1f2937;--muted:#6b7280;--primary:#2563eb;--ring:#dbeafe;--border:#e5e7eb;--male:#3b82f6;--female:#ec4899;--unk:#94a3b8; --highlight: #f59e0b;}
+    body{background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+    
+    .header-logo { max-height: 60px; }
+    #graphWrap{border:1px dashed var(--border);border-radius:14px;overflow:auto;background:#fff;height:520px;padding:8px}
+    svg{font:12px system-ui}
+    .node { cursor: pointer; }
+    .node circle{stroke:#fff;stroke-width:2px; transition: all 0.2s;}
+    .link{fill:none;stroke:#cbd5e1;stroke-width:1.6px; transition: stroke 0.2s, stroke-width 0.2s;}
+    .couple-link{fill:none;stroke:#a5b4fc;stroke-width:1.6px}
+    .pill{fill:#f8fafc;stroke:#e2e8f0;stroke-width:1px;rx:8;ry:8}
+    .toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transform:translateY(8px);transition:all .2s;z-index: 1100;}
+    .toast.show{opacity:1;transform:translateY(0)}
+    .post { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; position: relative; }
+    .post-header { font-weight: bold; font-size: 1.1em; }
+    .post-meta { font-size: 0.8em; color: var(--muted); margin-bottom: 8px; }
+    .post-content { white-space: pre-wrap; }
+    .comment { background-color: #f9fafb; border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
+    .comment-meta { font-size: 0.8em; font-weight: bold; }
+    .comment-meta span { color: var(--muted); font-weight: normal; margin-left: 8px; }
+    .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+    .gallery-item { position: relative; }
+    .gallery-item img { width: 100%; height: 150px; object-fit: cover; border-radius: 8px; }
+    .gallery-item p { font-size: 0.9em; margin-top: 4px; }
+    .reply-form-container { display: none; margin-top: 12px; }
+    .reply-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+    .details-panel { position: fixed; top: 0; right: -400px; width: 350px; height: 100%; background-color: var(--card); border-left: 1px solid var(--border); box-shadow: -2px 0 8px rgba(0,0,0,0.1); padding: 20px; overflow-y: auto; transition: right 0.3s ease-in-out; z-index: 1000; }
+    .details-panel.open { right: 0; }
+    .details-panel .close-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 24px; cursor: pointer; color: var(--muted); }
+    #panelContent h3 { margin-top: 0; font-size: 1.2em; color: var(--text); }
+    #panelContent .detail-item { margin-bottom: 12px; }
+    #panelContent .detail-label { font-weight: bold; color: var(--muted); display: block; font-size: 0.8em; text-transform: uppercase; }
+    #panelContent .detail-value { color: var(--text); }
+    #panelContent a { color: var(--primary); text-decoration: none; }
+    #panelContent a:hover { text-decoration: underline; }
+    .tab-nav { border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+    .tab-link { font-weight: 500; background: none; border: none; padding: 10px 16px; cursor: pointer; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+    .tab-link.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+    #imageModalImage { max-height: 80vh; }
+    .kinship-path-link { stroke: var(--highlight) !important; stroke-width: 3px !important; }
+    .kinship-path-node circle { stroke: var(--highlight) !important; stroke-width: 3px !important; }
+    .autocomplete { position: relative; }
+    .autocomplete-items { position: absolute; border: 1px solid var(--border); border-top: none; z-index: 99; top: 100%; left: 0; right: 0; background-color: var(--card); max-height: 200px; overflow-y: auto; }
+    .autocomplete-item { padding: 8px 12px; cursor: pointer; }
+    .autocomplete-item:hover { background-color: var(--ring); }
+    #familyContentContainer { display: none; transition: opacity 0.5s ease-in-out; opacity: 0; }
+    #familyContentContainer.visible { display: block; opacity: 1; }
+    .delete-btn { position: absolute; top: 0; right: 0; background: none; border: none; cursor: pointer; color: var(--muted); font-size: 1.1rem; padding: 0; line-height: 1; }
+    .delete-btn:hover { color: #dc3545; }
+    .gallery-item .delete-btn { top: 8px; right: 8px; color: white; background-color: rgba(0,0,0,0.3); border-radius: 50%; width: 28px; height: 28px; font-size: 1rem; display: flex; align-items: center; justify-content: center;}
+    .gallery-item .delete-btn:hover { background-color: rgba(220, 53, 69, 0.8); }
+    .gallery-item img[data-action="view-media"] { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container py-3">
+    <header class="d-flex align-items-center justify-content-between mb-3">
+	  <div class="d-flex align-items-center gap-2">
+		  <a href="{{ url_for('app_main') }}"><img src="{{ url_for('static', filename='images/logo.png') }}" alt="WeRfamily Logo" class="header-logo"></a>
+		  <span class="badge bg-warning text-dark">Beta</span>
+	  </div>
+	  <div class="d-flex align-items-center gap-3">
+		<span id="userName" class="text-muted fw-bold">Carregando...</span>
+        <a href="{{ url_for('about_page') }}" class="text-muted text-decoration-none small">Sobre</a>
+        <a href="{{ url_for('auth_bp.logout') }}" class="btn btn-outline-secondary btn-sm">Desconectar</a>
+	  </div>
+	</header>
+    
+    <section class="card p-4 mb-4">
+      <h5 class="card-title mb-3">Busca no FamilySearch</h5>
+      <div class="row g-3 align-items-end">
+        <div class="col-md-4 col-12"><label for="qName" class="form-label">Nome</label><input id="qName" class="form-control" placeholder="Maria Silva" /></div>
+        <div class="col-md-2 col-6"><label for="qFrom" class="form-label">Ano nasc. de</label><input id="qFrom" class="form-control" placeholder="1880" /></div>
+        <div class="col-md-2 col-6"><label for="qTo" class="form-label">Ano nasc. até</label><input id="qTo" class="form-control" placeholder="1920" /></div>
+        <div class="col-md-4 col-12"><label for="qPlace" class="form-label">Local de nascimento</label><input id="qPlace" class="form-control" placeholder="Alagoas, Brasil" /></div>
+        <div class="col-12 text-end"><button id="btnSearch" class="btn btn-primary" type="button">Buscar</button></div>
+        <div class="col-12"><div id="searchResults" class="table-responsive"></div></div>
+      </div>
+    </section>
+    
+    <section class="card p-4 mb-4">
+      <h5 class="card-title mb-3">Snapshots Salvos</h5>
+      <div id="snapshotList" class="mb-3">Clique em "Atualizar Lista" para ver os snapshots clonados.</div>
+      <div class="text-start"><button id="btnRefreshSnapshots" class="btn btn-primary">Atualizar Lista</button></div>
+    </section>
+
+    <div id="familyContentContainer">
+      <nav class="tab-nav">
+        <button class="tab-link active" data-tab="tab-tree">Árvore</button>
+        <button class="tab-link" data-tab="tab-posts">Mural</button>
+        <button class="tab-link" data-tab="tab-gallery">Galeria</button>
+        <button id="managementTabLink" class="tab-link" data-tab="tab-management" style="display: none;">Comunidade</button>
+      </nav>
+
+      <div class="tab-content">
+        <div id="tab-tree" class="tab-pane active">
+          <section class="card p-4">
+            <h5 class="card-title mb-3">Clonar e Visualizar Árvore</h5>
+            <div class="row g-3">
+              <div class="col-md-4"><label for="rootHusband" class="form-label">ID do Marido (Raiz)</label><input id="rootHusband" class="form-control" placeholder="Obrigatório" /></div>
+              <div class="col-md-4"><label for="rootWife" class="form-label">ID da Esposa (Raiz)</label><input id="rootWife" class="form-control" placeholder="Opcional" /></div>
+              <div class="col-md-4"><label for="slug" class="form-label">Nome da Família</label><input id="slug" class="form-control" value="default"/></div>
+              <div class="col-md-3"><label for="descDepth" class="form-label">Gerações (desc.)</label><input id="descDepth" class="form-control" value="3" /></div>
+              <div class="col-md-5 d-grid"><button id="btnClone" class="btn btn-primary mt-auto" type="button">Clonar Snapshot do FS</button></div>
+              <div class="col-12 mt-3"><div id="graphWrap"><svg id="graph" width="1600" height="1000"></svg></div></div>
+            </div>
+            
+            <hr class="my-4">
+            <h5 class="card-title mb-3">Encontrar Parentesco no Snapshot</h5>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label for="kinshipP1" class="form-label">Pessoa 1 (Origem)</label>
+                    <div class="autocomplete">
+                        <input type="text" id="kinshipP1" class="form-control" placeholder="Digite um nome do snapshot" autocomplete="off">
+                        <input type="hidden" id="kinshipP1_pid">
+                        <div class="autocomplete-items" id="kinshipP1Suggestions"></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label for="kinshipP2" class="form-label">Pessoa 2 (Destino)</label>
+                     <div class="autocomplete">
+                        <input type="text" id="kinshipP2" class="form-control" placeholder="Digite um nome do snapshot" autocomplete="off">
+                        <input type="hidden" id="kinshipP2_pid">
+                        <div class="autocomplete-items" id="kinshipP2Suggestions"></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <button id="btnFindKinship" class="btn btn-primary w-100" type="button">Encontrar Parentesco</button>
+                </div>
+                <div class="col-12">
+                    <div id="kinshipResult" class="form-text"></div>
+                </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="tab-posts" class="tab-pane">
+            <section id="postsSection" class="card p-4">
+                <h5 class="card-title mb-3">Mural da Família "<span class="familyName"></span>"</h5>
+                <div id="postsList"></div>
+                <hr class="my-4">
+                <h4>Nova Publicação</h4>
+                <div class="row g-3">
+                    <div class="col-12"><label for="postTitle" class="form-label">Título</label><input id="postTitle" class="form-control" /></div>
+                    <div class="col-12"><label for="postContent" class="form-label">História</label><textarea id="postContent" class="form-control" style="min-height: 120px;"></textarea></div>
+                    <div class="col-12 text-end"><button id="btnCreatePost" class="btn btn-primary">Publicar</button></div>
+                </div>
+            </section>
+        </div>
+
+        <div id="tab-gallery" class="tab-pane">
+            <section id="gallerySection" class="card p-4">
+                <h5 class="card-title mb-3">Galeria da Família "<span class="familyName"></span>"</h5>
+                <div id="galleryGrid" class="gallery-grid"></div>
+                <hr class="my-4">
+                <h4>Adicionar Foto à Galeria</h4>
+                <div class="row g-3">
+                    <div class="col-12"><label for="mediaFile" class="form-label">Ficheiro de Imagem</label><input id="mediaFile" type="file" class="form-control" accept="image/*" /></div>
+                    <div class="col-12"><label for="mediaCaption" class="form-label">Legenda (opcional)</label><input id="mediaCaption" class="form-control" /></div>
+                    <div class="col-12 text-end"><button id="btnUploadMedia" class="btn btn-primary">Enviar Foto</button></div>
+                </div>
+            </section>
+        </div>
+        
+        <div id="tab-management" class="tab-pane">
+            <section id="inviteSection" class="card p-4 mb-4">
+                <h5 class="card-title mb-3">Convidar para a Família "<span class="familyName"></span>"</h5>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-8"><label for="inviteEmail" class="form-label">E-mail do Convidado (opcional)</label><input id="inviteEmail" class="form-control" type="email" placeholder="email@exemplo.com" /></div>
+                    <div class="col-md-4 d-grid"><button id="btnCreateInvite" class="btn btn-primary">Gerar Link de Convite</button></div>
+                    <div class="col-12" id="inviteLinkContainer" style="display: none;">
+                        <label class="form-label">Link gerado (partilhe com o seu familiar):</label>
+                        <div class="input-group">
+                            <input type="text" id="inviteLink" class="form-control" readonly style="background-color: #e9ecef;">
+                            <button id="btnCopyInvite" class="btn btn-outline-secondary">Copiar</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <section id="managementSection" class="card p-4">
+                <h5 class="card-title mb-3">Gestão da Família "<span class="familyName"></span>"</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4>Membros Atuais</h4>
+                        <div id="memberList" class="table-responsive"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <h4>Convites Pendentes</h4>
+                        <div id="inviteList" class="table-responsive"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <div id="detailsPanel" class="details-panel">
+    <button id="closePanelBtn" class="close-btn">&times;</button>
+    <div id="panelContent"></div>
+  </div>
+
+  <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="imageModalLabel">Legenda da Imagem</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body text-center">
+          <img src="" id="imageModalImage" class="img-fluid" alt="Imagem ampliada">
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => document.querySelectorAll(sel);
+    const showToast = (msg, ms=2400) => { const t=$('#toast'); if(t){ t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), ms); } else { console.log('Toast:', msg); } };
+    let _currentFamilySlug = null;
+    let _isCurrentUserAdmin = false;
+    let _currentSnapshotData = null;
+    let _currentSnapshotPeople = [];
+    let imageModal;
+    let _currentUserId = null;
+
+    async function updateUserInfo(){
+      try {
+        const r = await fetch("/auth/status", {credentials:"include"}).then(r => r.json());
+        const userNameSpan = $("#userName");
+        if (r.ok && r.user) {
+            userNameSpan.textContent = `Olá, ${r.user.name.split(' ')[0]}`;
+            _currentUserId = r.user.fs_id;
+        } else {
+            window.location.href = '/';
+        }
+      } catch (e) {
+          console.error("Falha ao verificar status de autenticação", e);
+          window.location.href = '/';
+      }
+    }
+	
+	$("#btnSearch").addEventListener("click", async () => {
+		const name = $("#qName").value.trim(); 
+		if (!name) { showToast("Informe um nome."); return; }
+		const btn = $("#btnSearch");
+		const originalText = btn.innerHTML;
+		btn.disabled = true;
+		btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Buscando...`;
+		const body = { name: name, birth_year_from: parseInt($("#qFrom").value, 10) || null, birth_year_to: parseInt($("#qTo").value, 10) || null, birth_place: $("#qPlace").value.trim() || null, count: 20 };
+        try {
+			const r = await fetch(`/persons/matches`, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), credentials: "include" });
+			if (r.status === 401) { window.location.href = "/"; return; }
+			const js = await r.json();
+			const div = $("#searchResults"); div.innerHTML = "";
+			if (!js.ok || !js.data?.length) { div.textContent = "Nenhum resultado encontrado."; return; }
+			const tbl = document.createElement("table");
+            tbl.className = "table table-sm table-hover";
+			tbl.innerHTML = "<thead><tr><th>Score</th><th>Nome</th><th>Nascimento</th><th>Local</th><th>PID</th></tr></thead>";
+			const tb = document.createElement("tbody");
+			js.data.forEach(item => { const p = item.summary; const tr = document.createElement("tr"); tr.innerHTML = `<td>${item.score.toFixed(2)}</td><td>${p.name || ""}</td><td>${p.birthDate || ""}</td><td>${p.birthPlace || ""}</td><td><a href="#" onclick="selectPid('${p.id}')">${p.id}</a></td>`; tb.appendChild(tr); });
+			tbl.appendChild(tb); div.appendChild(tbl);
+		} catch (e) { 
+			console.error(e); 
+			showToast("Erro na busca."); 
+		} finally {
+			btn.disabled = false;
+			btn.innerHTML = originalText;
+		}
+	});
+    
+    window.selectPid = (pid)=>{ 
+        const rootInput = $("#rootHusband");
+        rootInput.value=pid; 
+        showToast(`PID ${pid} selecionado.`); 
+        rootInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        rootInput.focus({ preventScroll: true });
+    };
+
+	$("#btnClone").addEventListener("click", async () => {
+		const btn = $("#btnClone");
+        const payload = { husband: $("#rootHusband").value.trim(), wife: $("#rootWife").value.trim(), slug: $("#slug").value.trim() || "default", desc_depth: parseInt($("#descDepth").value, 10) || 0, asc_depth: 0 };
+		if (!payload.husband && !payload.wife) { showToast("Informe um ID raiz."); return; }
+		btn.disabled = true;
+		btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Clonando…`;
+		try {
+            const r = await fetch('/snapshot/clone', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload), credentials: 'include' });
+            if (r.status === 401) { window.location.href = "/"; return; }
+            const data = await r.json();
+            if (data.ok) {
+                showToast(`Snapshot '${data.slug}' clonado!`);
+                drawSnapshot(data);
+                showFamilySections(data.slug, data.isAdmin);
+                $("#btnRefreshSnapshots").click();
+            } else {
+                const errorMessage = data.error || 'Erro desconhecido no servidor.';
+                showToast(`Erro ao clonar: ${errorMessage}`);
+                hideFamilySections();
+            }
+		} catch (e) { 
+			console.error(e); showToast("Erro de comunicação."); 
+			hideFamilySections();
+		} finally {
+			btn.disabled = false;
+			btn.innerHTML = "Clonar Snapshot do FS";
+		}
+	});
+
+    $("#btnRefreshSnapshots").addEventListener("click", async () => {
+        const listDiv = $('#snapshotList'); listDiv.textContent = 'Atualizando...';
+        try {
+            const r = await fetch('/snapshot', {credentials: "include"});
+            if (r.status === 401) { window.location.href = "/"; return; }
+            const result = await r.json();
+            if (result.ok && result.items.length > 0) {
+                listDiv.innerHTML = '';
+                result.items.forEach(snap => { 
+                    const item = document.createElement('button');
+                    item.className = 'snapshot-item btn btn-light w-100 mb-2 text-start d-flex justify-content-between align-items-center'; 
+                    item.innerHTML = `<span>${snap.slug}</span><i class="bi bi-chevron-right"></i>`; 
+                    item.onclick = () => loadAndDrawSnapshot(snap.slug); 
+                    listDiv.appendChild(item); 
+                });
+            } else { listDiv.textContent = 'Nenhum snapshot salvo.'; }
+        } catch (e) { console.error(e); listDiv.textContent = 'Erro ao atualizar.'; }
+    });
+
+    async function loadAndDrawSnapshot(slug) {
+        showToast(`Carregando '${slug}'...`);
+        try {
+            const r = await fetch(`/snapshot/${slug}`, {credentials: "include"});
+            if (r.status === 401) { window.location.href = "/"; return; }
+            const data = await r.json();
+            if (data.ok) {
+                drawSnapshot(data);
+                showFamilySections(slug, data.isAdmin);
+                showToast(`Snapshot '${slug}' carregado.`);
+            } else { showToast(`Erro: ${data.error}`); hideFamilySections(); }
+        } catch (e) { console.error(e); showToast('Erro de comunicação.'); hideFamilySections(); }
+    }
+    
+    function setupTabs() {
+        const tabNav = $('.tab-nav');
+        tabNav.addEventListener('click', (e) => {
+            const target = e.target;
+            if (!target.matches('.tab-link')) return;
+            const tabId = target.dataset.tab;
+            $$('.tab-link').forEach(link => link.classList.remove('active'));
+            $$('.tab-pane').forEach(pane => pane.classList.remove('active'));
+            target.classList.add('active');
+            $(`#${tabId}`).classList.add('active');
+            if (tabId === 'tab-management') loadManagementData(_currentFamilySlug);
+        });
+    }
+
+    function showFamilySections(slug, isAdmin = false) {
+        _currentFamilySlug = slug;
+        _isCurrentUserAdmin = isAdmin;
+        $$(".familyName").forEach(el => el.textContent = slug);
+        $('#familyContentContainer').classList.add('visible');
+        if (isAdmin) {
+            $('#managementTabLink').style.display = 'inline-block';
+        } else {
+            $('#managementTabLink').style.display = 'none';
+        }
+        loadAndRenderPosts(slug);
+        loadAndRenderGallery(slug);
+    }
+
+    function hideFamilySections() {
+        _currentFamilySlug = null;
+        _isCurrentUserAdmin = false;
+        $('#familyContentContainer').classList.remove('visible');
+    }
+    
+    async function loadAndRenderPosts(slug) {
+        const listDiv = $('#postsList');
+        listDiv.innerHTML = 'Carregando...';
+        try {
+            const r = await fetch(`/family/${slug}/posts`, {credentials: "include"});
+            if (r.status === 401) { window.location.href = "/"; return; }
+            const res = await r.json();
+            listDiv.innerHTML = '';
+            if (res.ok && res.data.length > 0) {
+                res.data.forEach(post => {
+                    const postEl = document.createElement('div');
+                    postEl.className = 'post';
+                    postEl.id = `post-${post.id}`;
+                    const commentsHTML = post.comments.map(c => `<div class="comment"><div class="comment-meta">${c.author.name} <span>em ${new Date(c.created_at).toLocaleDateString()}</span></div><div class="comment-content">${c.content}</div></div>`).join('');
+                    let deleteButtonHTML = '';
+                    if (_currentUserId && post.author.fs_id === _currentUserId) {
+                        deleteButtonHTML = `<button class="delete-btn" data-action="delete-post" data-post-id="${post.id}" title="Excluir publicação"><i class="bi bi-trash"></i></button>`;
+                    }
+                    postEl.innerHTML = `${deleteButtonHTML}<div class="post-header">${post.title}</div><div class="post-meta">Por ${post.author.name} em ${new Date(post.created_at).toLocaleDateString()}</div><div class="post-content">${post.content}</div><div class="comments-section">${commentsHTML}</div><button class="btn btn-primary btn-sm" data-action="toggle-reply" data-post-id="${post.id}">Responder</button><div class="reply-form-container" id="reply-form-${post.id}"><textarea class="form-control" placeholder="Escreva a sua resposta..."></textarea><div class="reply-actions"><button class="btn btn-secondary btn-sm" data-action="cancel-reply" data-post-id="${post.id}">Cancelar</button><button class="btn btn-primary btn-sm" data-action="submit-reply" data-post-id="${post.id}">Enviar</button></div></div>`;
+                    listDiv.appendChild(postEl);
+                });
+            } else {
+                listDiv.innerHTML = '<div class="text-center text-muted p-4">Nenhuma história publicada ainda. Que tal ser o primeiro a compartilhar algo?</div>';
+            }
+        } catch (e) { console.error("Erro ao carregar posts:", e); listDiv.textContent = 'Erro ao carregar as publicações.'; }
+    }
+
+    $("#postsList").addEventListener('click', async (e) => {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        const action = target.dataset.action;
+        const postId = target.dataset.postId;
+        if (action === 'delete-post') {
+            if (confirm("Tem certeza que deseja excluir esta publicação? Esta ação não pode ser desfeita.")) {
+                try {
+                    const r = await fetch(`/post/${postId}`, { method: 'DELETE', credentials: 'include' });
+                    if (r.ok) {
+                        showToast("Publicação excluída com sucesso.");
+                        const el = $(`#post-${postId}`);
+                        el.style.transition = 'opacity 0.5s';
+                        el.style.opacity = '0';
+                        setTimeout(() => el.remove(), 500);
+                    } else {
+                        const err = await r.json();
+                        showToast(`Erro ao excluir: ${err.error || 'Tente novamente.'}`);
+                    }
+                } catch (err) { showToast("Erro de conexão ao tentar excluir."); }
+            }
+            return;
+        }
+        const formContainer = $(`#reply-form-${postId}`);
+        if (action === 'toggle-reply') { formContainer.style.display = formContainer.style.display === 'block' ? 'none' : 'block'; }
+        if (action === 'cancel-reply') { formContainer.style.display = 'none'; }
+        if (action === 'submit-reply') {
+            const content = formContainer.querySelector('textarea').value;
+            if (!content) { showToast("O comentário não pode estar vazio."); return; }
+            target.disabled = true;
+            try {
+                const r = await fetch(`/post/${postId}/comment`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ content: content }), credentials: 'include' });
+                if (r.status === 401) { window.location.href = "/"; return; }
+                const res = await r.json();
+                if (res.ok) {
+                    showToast("Comentário adicionado!");
+                    loadAndRenderPosts(_currentFamilySlug);
+                } else {
+                    showToast(`Erro: ${res.error}`);
+                }
+            } catch (err) {
+                showToast("Erro de comunicação.");
+            } finally {
+                target.disabled = false;
+            }
+        }
+    });
+    
+    $("#btnCreatePost").addEventListener("click", async () => {
+        if (!_currentFamilySlug) { showToast("Carregue uma família."); return; } const btn = $("#btnCreatePost"); const body = { title: $("#postTitle").value, content: $("#postContent").value }; if (!body.title || !body.content) { showToast("Título e história são obrigatórios."); return; } btn.disabled = true; btn.textContent = "Publicando..."; try { const r = await fetch(`/family/${_currentFamilySlug}/posts`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), credentials: 'include' }); if (r.status === 401) { window.location.href = "/"; return; } const res = await r.json(); if (res.ok) { showToast("Publicação criada!"); $("#postTitle").value = ''; $("#postContent").value = ''; loadAndRenderPosts(_currentFamilySlug); } else { showToast(`Erro: ${res.error}`); } } catch (e) { console.error(e); showToast("Erro de comunicação."); } finally { btn.disabled = false; btn.textContent = "Publicar"; }
+    });
+    
+    async function loadAndRenderGallery(slug) {
+		const gridDiv = $('#galleryGrid');
+        gridDiv.innerHTML = 'Carregando...';
+		try {
+			const r = await fetch(`/family/${slug}/gallery`, {credentials: "include"});
+            if (r.status === 401) { window.location.href = "/"; return; }
+            const res = await r.json();
+            gridDiv.innerHTML = '';
+			if (res.ok && res.data.length > 0) {
+				res.data.forEach(media => {
+					const itemEl = document.createElement('div');
+                    itemEl.className = 'gallery-item';
+                    itemEl.id = `media-${media.id}`;
+                    let deleteButtonHTML = '';
+                    if (_currentUserId && media.uploader && media.uploader.fs_id === _currentUserId) {
+                        deleteButtonHTML = `<button class="delete-btn" data-action="delete-media" data-media-id="${media.id}" title="Excluir foto"><i class="bi bi-trash"></i></button>`;
+                    }
+					itemEl.innerHTML = `${deleteButtonHTML}<img src="${media.url}" alt="${media.caption || ''}" data-action="view-media" /><p>${media.caption || 'Sem legenda'}</p>`;
+					gridDiv.appendChild(itemEl);
+				});
+			} else {
+                gridDiv.innerHTML = '<div class="text-center text-muted p-4">Nenhuma foto na galeria. Adicione a primeira!</div>';
+            }
+		} catch(e) { gridDiv.textContent = 'Erro ao carregar.'; }
+	}
+
+    $('#galleryGrid').addEventListener('click', async (e) => {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        const action = target.dataset.action;
+        if (action === 'view-media') {
+            const itemEl = target.closest('.gallery-item');
+            const imgSrc = itemEl.querySelector('img').src;
+            const caption = itemEl.querySelector('p').textContent;
+            $('#imageModalLabel').textContent = caption;
+            $('#imageModalImage').src = imgSrc;
+            if (!imageModal) { imageModal = new bootstrap.Modal($('#imageModal')); }
+            imageModal.show();
+            return;
+        }
+        if (action === 'delete-media') {
+            const mediaId = target.dataset.mediaId;
+            if (confirm("Tem certeza que deseja excluir esta foto?")) {
+                try {
+                    const r = await fetch(`/gallery/${mediaId}`, { method: 'DELETE', credentials: 'include' });
+                    if (r.ok) {
+                        showToast("Foto excluída com sucesso.");
+                        const el = $(`#media-${mediaId}`);
+                        el.style.transition = 'transform 0.5s, opacity 0.5s';
+                        el.style.transform = 'scale(0)';
+                        el.style.opacity = '0';
+                        setTimeout(() => el.remove(), 500);
+                    } else {
+                        const err = await r.json();
+                        showToast(`Erro ao excluir: ${err.error || 'Tente novamente.'}`);
+                    }
+                } catch (err) {
+                    showToast("Erro de conexão ao tentar excluir.");
+                }
+            }
+        }
+    });
+    
+    $("#btnUploadMedia").addEventListener("click", async () => {
+        if (!_currentFamilySlug) { showToast("Carregue uma família."); return; } const btn = $("#btnUploadMedia"); const fileInput = $("#mediaFile"); if (fileInput.files.length === 0) { showToast("Selecione um ficheiro."); return; } const formData = new FormData(); formData.append('file', fileInput.files[0]); formData.append('caption', $("#mediaCaption").value); btn.disabled = true; btn.textContent = "Enviando..."; try { const r = await fetch(`/family/${_currentFamilySlug}/gallery`, { method: 'POST', body: formData, credentials: 'include' }); if (r.status === 401) { window.location.href = "/"; return; } const res = await r.json(); if (res.ok) { showToast("Foto enviada!"); fileInput.value = ''; $("#mediaCaption").value = ''; loadAndRenderGallery(_currentFamilySlug); } else { showToast(`Erro: ${res.error}`); } } catch(e) { console.error(e); showToast("Erro de comunicação."); } finally { btn.disabled = false; btn.textContent = "Enviar Foto"; }
+    });
+
+    $("#btnCopyInvite").addEventListener("click", () => { const linkInput = $("#inviteLink"); if (navigator.clipboard) { navigator.clipboard.writeText(linkInput.value).then(() => { showToast("Link copiado!"); }).catch(err => { showToast("Falha ao copiar."); }); } else { showToast("Copiar não é suportado."); } });
+    
+    $("#btnCreateInvite").addEventListener("click", async () => { if (!_currentFamilySlug) { showToast("Carregue uma família."); return; } const btn = $("#btnCreateInvite"); btn.disabled = true; btn.textContent = "Gerando..."; try { const r = await fetch(`/family/${_currentFamilySlug}/invite`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email: $("#inviteEmail").value }), credentials: 'include' }); if (r.status === 401) { window.location.href = "/"; return; } const data = await r.json(); if (data.ok) { $("#inviteLink").value = data.invite_url; $("#inviteLinkContainer").style.display = 'block'; showToast("Link gerado!"); } else { showToast(`Erro: ${data.error}`); } } catch (e) { console.error(e); showToast("Erro de comunicação."); } finally { btn.disabled = false; btn.textContent = "Gerar Link de Convite"; } });
+    
+    async function loadManagementData(slug) {
+        const memberListDiv = $('#memberList'); const inviteListDiv = $('#inviteList');
+        memberListDiv.innerHTML = 'Carregando...'; inviteListDiv.innerHTML = 'Carregando...';
+        try {
+            const r = await fetch(`/family/${slug}/manage`, { credentials: 'include' });
+            if (r.status === 401) { window.location.href = "/"; return; }
+            const res = await r.json();
+            if (res.ok) {
+                memberListDiv.innerHTML = '';
+                if (res.data.members.length > 0) { const table = `<table class="table table-sm"><tr><th>Nome</th><th>Papel</th></tr>${res.data.members.map(m => `<tr><td>${m.name}</td><td>${m.role}</td></tr>`).join('')}</table>`; memberListDiv.innerHTML = table; } 
+                else { memberListDiv.textContent = 'Nenhum membro encontrado.'; }
+                inviteListDiv.innerHTML = '';
+                if (res.data.pending_invites.length > 0) { const table = `<table class="table table-sm"><tr><th>Convidado (Email)</th><th>Gerado em</th></tr>${res.data.pending_invites.map(i => `<tr><td>${i.email || 'Link genérico'}</td><td>${new Date(i.created_at).toLocaleDateString()}</td></tr>`).join('')}</table>`; inviteListDiv.innerHTML = table; }
+                else { inviteListDiv.textContent = 'Nenhum convite pendente.'; }
+            } else { throw new Error(res.error || 'Erro desconhecido.'); }
+        } catch (e) { console.error(e); showToast(e.message); memberListDiv.innerHTML = 'Erro ao carregar membros.'; inviteListDiv.innerHTML = 'Erro ao carregar convites.'; }
+    }
+    
+    function setupAutocomplete(inputId, suggestionsId, hiddenInputId) {
+        const input = $(`#${inputId}`);
+        const suggestions = $(`#${suggestionsId}`);
+        const hiddenInput = $(`#${hiddenInputId}`);
+        input.addEventListener('input', () => {
+            const value = input.value.toLowerCase();
+            suggestions.innerHTML = '';
+            hiddenInput.value = '';
+            if (!value) return;
+            const filtered = _currentSnapshotPeople.filter(p => p.name.toLowerCase().includes(value)).slice(0, 7);
+            filtered.forEach(person => {
+                const item = document.createElement('div');
+                item.className = 'autocomplete-item';
+                item.textContent = person.name;
+                item.addEventListener('click', () => {
+                    input.value = person.name;
+                    hiddenInput.value = person.id;
+                    suggestions.innerHTML = '';
+                });
+                suggestions.appendChild(item);
+            });
+        });
+        document.addEventListener('click', (e) => {
+            if (e.target.id !== inputId) {
+                suggestions.innerHTML = '';
+            }
+        });
+    }
+
+    function findKinshipPathInSnapshot(person1Id, person2Id, snapshotData) {
+        if (!snapshotData || !snapshotData.elements) return null;
+        const nodes = (snapshotData.elements.nodes || []).map(n => n.data || n);
+        const edges = (snapshotData.elements.edges || []).map(e => e.data || e);
+        const nodeExists = new Set(nodes.map(n => n.id));
+        if (!nodeExists.has(person1Id) || !nodeExists.has(person2Id)) {
+            showToast("Um ou ambos os IDs não foram encontrados no snapshot.");
+            return null;
+        }
+        const parentMap = new Map();
+        edges.forEach(edge => {
+            if (edge.type === 'parentChild') {
+                const parentId = edge.from || edge.source;
+                const childId = edge.to || edge.target;
+                if (!parentMap.has(childId)) parentMap.set(childId, []);
+                parentMap.get(childId).push(parentId);
+            }
+        });
+        const q1 = [[person1Id, [person1Id]]];
+        const visited1 = new Map([[person1Id, [person1Id]]]);
+        const q2 = [[person2Id, [person2Id]]];
+        const visited2 = new Map([[person2Id, [person2Id]]]);
+        while (q1.length > 0 && q2.length > 0) {
+            let [currId1, path1] = q1.shift();
+            if (visited2.has(currId1)) {
+                const path2 = visited2.get(currId1);
+                return { path: path1.concat(path2.reverse().slice(1)), ancestor: currId1 };
+            }
+            for (const pId of (parentMap.get(currId1) || [])) {
+                if (!visited1.has(pId)) {
+                    const newPath = [...path1, pId];
+                    visited1.set(pId, newPath);
+                    q1.push([pId, newPath]);
+                }
+            }
+            let [currId2, path2] = q2.shift();
+            if (visited1.has(currId2)) {
+                const path1 = visited1.get(currId2);
+                return { path: path1.concat(path2.reverse().slice(1)), ancestor: currId2 };
+            }
+            for (const pId of (parentMap.get(currId2) || [])) {
+                if (!visited2.has(pId)) {
+                    const newPath = [...path2, pId];
+                    visited2.set(pId, newPath);
+                    q2.push([pId, newPath]);
+                }
+            }
+        }
+        return null;
+    }
+
+    $("#closePanelBtn").addEventListener("click", () => { $("#detailsPanel").classList.remove("open"); });
+    
+    function showDetailsPanel(nodeData) {
+        const contentDiv = $("#panelContent"); const birthInfo = (nodeData.birth && (nodeData.birth.date || nodeData.birth.place)) ? `${nodeData.birth.date || '...'} em ${nodeData.birth.place || '...'}` : '<i>indisponível</i>'; const deathInfo = (nodeData.death && (nodeData.death.date || nodeData.death.place)) ? `${nodeData.death.date || '...'} em ${nodeData.death.place || '...'}` : '<i>indisponível</i>'; contentDiv.innerHTML = `<h3>${nodeData.name || '...'}</h3><div class="detail-item"><span class="detail-label">ID</span><span class="detail-value">${nodeData.pid || nodeData.id}</span></div><div class="detail-item"><span class="detail-label">Género</span><span class="detail-value">${nodeData.gender || '...'}</span></div><div class="detail-item"><span class="detail-label">Nascimento</span><span class="detail-value">${birthInfo}</span></div><div class="detail-item"><span class="detail-label">Falecimento</span><span class="detail-value">${deathInfo}</span></div><div class="detail-item"><span class="detail-label">Ver no FamilySearch</span><span class="detail-value"><a href="https://www.familysearch.org/tree/person/details/${nodeData.pid || nodeData.id}" target="_blank" rel="noopener noreferrer">Abrir perfil</a></span></div>`; $("#detailsPanel").classList.add("open");
+    }
+    
+    function drawSnapshot(snapshotData, kinshipPath = []) {
+        _currentSnapshotData = snapshotData;
+        _currentSnapshotPeople = (snapshotData?.elements?.nodes || [])
+            .map(n => n.data || n)
+            .map(p => ({ id: p.id, name: `${p.name} (${p.id})` }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        if (!snapshotData || !snapshotData.roots || !snapshotData.roots.length) { console.error("Dados do snapshot inválidos:", snapshotData); showToast("Erro: Dados do snapshot inválidos."); return; }
+        const rootId = snapshotData.roots[0];
+        drawGraphFromElements(snapshotData.elements, rootId, kinshipPath);
+    }
+    
+    function drawGraphFromElements(elements, rootId, kinshipPath){
+      const svg=d3.select("#graph"); svg.selectAll("*").remove(); const nodes = (elements?.nodes||[]).map(n => n.data || n); const edges = (elements?.edges||[]).map(e => e.data || e); if(!nodes.length) { nodes.push({id:rootId, name:rootId, gender:""}); } const byId=new Map(nodes.map(n=>[n.id,n])); const parentChildEdges = edges.filter(e => e.type === 'parentChild'); const coupleEdges = edges.filter(e => e.type === 'couple'); const children=new Map(); for(const e of parentChildEdges){ const parentId = e.from || e.source; const childId = e.to || e.target; if(!children.has(parentId)) children.set(parentId,[]); children.get(parentId).push(childId); } const root=buildTree(rootId, byId, children); renderTree(svg, root, byId, coupleEdges, kinshipPath);
+    }
+    
+    function buildTree(rootId, byId, children){
+      const mk = id => { const d = byId.get(id) || {id, name:id, gender:""}; return { id: id, name: d.name || id, pid: d.id || id, gender: d.gender || "", birth: d.birth, death: d.death, children: [] }; }; const seen=new Set(); function dfs(id){ if(seen.has(id)) return null; seen.add(id); const node = mk(id); if (children.has(id)) { for(const k of children.get(id)){ const ch = dfs(k); if(ch)node.children.push(ch); } } return node; } return dfs(rootId) || mk(rootId);
+    }
+    
+    function renderTree(svg, data, allNodesById, coupleEdges, kinshipPath){
+      const width=1600, dx=32, dy=280; const root=d3.hierarchy(data); d3.tree().nodeSize([dx,dy])(root); let x0=Infinity,x1=-x0; root.each(d=>{ if(d.x > x1) x1=d.x; if(d.x < 0) x0=d.x; }); svg.attr("viewBox",[-dy/2, x0-dx, width, x1-x0+dx*2].join(" ")); const g = svg.append("g"); const linkGroup = g.append("g"); const nodeGroup = g.append("g"); const allLinks = linkGroup.selectAll("path").data(root.links()).join("path").attr("class","link").attr("d", d3.linkHorizontal().x(d=>d.y).y(d=>d.x)); const allNodes = nodeGroup.selectAll("g").data(root.descendants()).join("g").attr("class","node").attr("transform", d => `translate(${d.y},${d.x})`); allNodes.on('click', (event, d) => { showDetailsPanel(d.data); }); allNodes.append("circle").attr("r", 8).attr("fill", d => { const g=(d.data.gender||"").toLowerCase(), s=getComputedStyle(document.documentElement); if(g.startsWith("m")||g==='male') return s.getPropertyValue('--male'); if(g.startsWith("f")||g==='female') return s.getPropertyValue('--female'); return s.getPropertyValue('--unk'); }); allNodes.each(function(d){ const grp=d3.select(this), label=`${d.data.name} (${d.data.pid})`; const tmp=grp.append("text").text(label).attr("opacity",0); const bb=tmp.node().getBBox(); tmp.remove(); grp.append("rect").attr("class","pill").attr("x",14).attr("y",-bb.height/2-4).attr("width",bb.width+20).attr("height",bb.height+8); grp.append("text").attr("x",24).attr("y",4).text(label).attr("fill","#111827"); }); const renderedNodes = new Map(root.descendants().map(d => [d.data.id, d])); const spouseOffset = 20; coupleEdges.forEach(edge => { const p1Id = edge.from || edge.a; const p2Id = edge.to || edge.b; let anchorNode = renderedNodes.get(p1Id), spouseId = p2Id; if (!anchorNode) { anchorNode = renderedNodes.get(p2Id); spouseId = p1Id; } if(anchorNode && !renderedNodes.has(spouseId)) { const spouseData = allNodesById.get(spouseId); if (!spouseData) return; const spouseX = anchorNode.x + spouseOffset; const spouseY = anchorNode.y; linkGroup.append('path').attr('class', 'couple-link').attr('d', `M${spouseY},${anchorNode.x} L${spouseY},${spouseX}`); const spouseNode = nodeGroup.append('g').attr('class', 'node').attr('transform', `translate(${spouseY},${spouseX})`).on('click', () => showDetailsPanel(spouseData)); const g = (spouseData.gender||"").toLowerCase(), s = getComputedStyle(document.documentElement); let color = s.getPropertyValue('--unk'); if(g.startsWith("m")||g==='male') color = s.getPropertyValue('--male'); if(g.startsWith("f")||g==='female') color = s.getPropertyValue('--female'); spouseNode.append('circle').attr('r', 8).attr('fill', color); const label = `${spouseData.name} (${spouseData.id})`; const tmp = spouseNode.append("text").text(label).attr("opacity",0); const bb=tmp.node().getBBox(); tmp.remove(); spouseNode.append("rect").attr("class","pill").attr("x",14).attr("y",-bb.height/2-4).attr("width",bb.width+20).attr("height",bb.height+8); spouseNode.append("text").attr("x",24).attr("y",4).text(label).attr("fill","#111827"); } }); if (kinshipPath && kinshipPath.length > 0) { const pathSet = new Set(kinshipPath); allNodes.filter(d => pathSet.has(d.data.id)).classed('kinship-path-node', true); allLinks.filter(d => pathSet.has(d.source.data.id) && pathSet.has(d.target.data.id)).classed('kinship-path-link', true); }
+    }
+    
+    setupTabs();
+    document.addEventListener('DOMContentLoaded', () => {
+        updateUserInfo();
+        $("#btnRefreshSnapshots").click();
+        setupAutocomplete('kinshipP1', 'kinshipP1Suggestions', 'kinshipP1_pid');
+        setupAutocomplete('kinshipP2', 'kinshipP2Suggestions', 'kinshipP2_pid');
+    });
+
+    $("#btnFindKinship").addEventListener("click", () => {
+        const p1 = $("#kinshipP1_pid").value;
+        const p2 = $("#kinshipP2_pid").value;
+        const resultDiv = $("#kinshipResult");
+        resultDiv.textContent = "";
+
+        if (!p1 || !p2) {
+            showToast("Por favor, selecione duas pessoas da lista.");
+            return;
+        }
+        if (!_currentSnapshotData) {
+            showToast("Carregue um snapshot primeiro.");
+            return;
+        }
+
+        const result = findKinshipPathInSnapshot(p1, p2, _currentSnapshotData);
+        
+        drawSnapshot(_currentSnapshotData, result ? result.path : []);
+        
+        if (result) {
+            const ancestorNode = _currentSnapshotPeople.find(p => p.id === result.ancestor);
+            const ancestorName = ancestorNode ? ancestorNode.name : result.ancestor;
+
+            resultDiv.textContent = `Caminho encontrado! O ancestral comum mais próximo é ${ancestorName}. O caminho foi destacado na árvore.`;
+            showToast("Parentesco encontrado e destacado!");
+        } else {
+            if (resultDiv.textContent === "") {
+                resultDiv.textContent = `Nenhum caminho de parentesco direto (subindo pelos pais) foi encontrado entre as pessoas selecionadas neste snapshot.`;
+            }
+        }
+    });
+  </script>
+</body>
+</html>

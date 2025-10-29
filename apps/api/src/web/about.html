@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Sobre o WeRfamily</title>
+    <style>
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; max-width: 800px; margin: auto; padding: 20px; background-color: #f5f7fa; color: #333; }
+        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.08); }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e0e0; padding-bottom: 20px; margin-bottom: 20px; }
+        .header .logo img { max-width: 180px; }
+        .header nav a { margin-left: 20px; color: #007bff; text-decoration: none; font-weight: 500; }
+        .header nav a:hover { text-decoration: underline; }
+        h1, h2 { color: #005a9c; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; }
+        p, li { line-height: 1.6; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .back-link { display: inline-block; margin-top: 20px; padding: 10px 15px; background-color: #6c757d; color: white; border-radius: 4px; text-decoration: none; }
+        .back-link:hover { background-color: #5a6268; text-decoration: none; }
+        .footer { margin-top: 40px; font-size: 0.9em; color: #666; text-align: center; }
+        .beta-warning { background-color: #fff3cd; border-left: 5px solid #ffeeba; color: #856404; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <a href="{{ url_for('app_main') }}">
+                    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="WeRfamily Logo">
+                </a>
+            </div>
+            <nav>
+                <a href="{{ url_for('app_main') }}">Início</a>
+                <a href="{{ url_for('auth_bp.logout') }}">Sair</a>
+            </nav>
+        </div>
+
+        <h1>Sobre o WeRfamily</h1>
+        <p> O <strong>WeRfamily</strong> é uma plataforma inovadora de genealogia colaborativa, criada para reunir famílias e preservar histórias. Ele integra dados do <strong>FamilySearch</strong> e de fontes particulares, oferecendo uma experiência visual e interativa para explorar sua árvore genealógica. </p>
+        <p> Diferente das plataformas tradicionais, o WeRfamily permite que cada família tenha seu próprio ambiente de gestão — com administradores, convidados e controle de ramos. A ideia é que a árvore seja um reflexo vivo da história familiar, constantemente expandida e conectada por parentes ao redor do mundo. </p>
+
+        <h2>Principais Recursos</h2>
+        <ul>
+            <li><strong>Integração com o FamilySearch:</strong> Conecte-se com sua conta e visualize sua árvore completa diretamente no WeRfamily.</li>
+            <li><strong>Visualização Gráfica Avançada:</strong> Veja relações familiares, casais e descendentes de forma clara e dinâmica.</li>
+            <li><strong>Árvores Colaborativas:</strong> Convide parentes, adicione histórias, fotos e documentos para enriquecer a herança familiar.</li>
+            <li><strong>Clonagem de Snapshots:</strong> Crie cópias de segurança das suas árvores e preserve versões específicas.</li>
+            <li><strong>Busca Inteligente:</strong> Localize pessoas rapidamente no FamilySearch e adicione-as ao seu ambiente.</li>
+        </ul>
+
+        <div class="beta-warning">
+            <h2>Versão Beta</h2>
+            <p>O WeRfamily está em fase de desenvolvimento e testes. Algumas funcionalidades podem estar incompletas ou em aprimoramento contínuo.</p>
+            <ul>
+                <li>Integração ativa com o ambiente <strong>Beta</strong> do FamilySearch.</li>
+                <li>Possibilidade de falhas temporárias durante a sincronização e carregamento de árvores.</li>
+            </ul>
+        </div>
+
+        <h2>Privacidade e Segurança</h2>
+        <p> A privacidade dos dados familiares é tratada com máxima prioridade. O WeRfamily utiliza tokens temporários do FamilySearch para leitura dos dados — sem armazenar informações pessoais sensíveis ou credenciais. </p>
+
+        <h2>Colaboração e Comunidade</h2>
+        <p> O projeto é aberto à comunidade de genealogistas, desenvolvedores e pesquisadores interessados em contribuir com o aperfeiçoamento da ferramenta. Você pode sugerir melhorias, reportar bugs ou participar do desenvolvimento colaborativo via GitHub. </p>
+
+        <div class="footer">
+            <p>Desenvolvido por <strong>Sandro Stéfano Sá Azevedo</strong></p>
+            <p><a href="https://github.com/sssazevedo/werfamily" target="_blank" rel="noopener">Veja o projeto no GitHub</a></p>
+        </div>
+
+        <a href="{{ url_for('app_main') }}" class="back-link">Voltar ao Início</a>
+    </div>
+</body>
+</html>

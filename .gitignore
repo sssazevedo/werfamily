@@ -1,0 +1,20 @@
+# Arquivos de Ambiente Virtual Python
+/venv/
+/env/
+/*.venv
+
+# Arquivos compilados do Python
+__pycache__/
+*.pyc
+
+# Arquivos de segredos e configuração local
+.env
+*.env
+
+# Certificados SSL locais
+cert.pem
+key.pem
+
+# Pastas de configuração de IDEs
+.vscode/
+.idea/
