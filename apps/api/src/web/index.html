@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <title>WeRfamily — MVP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif; }
+    body { margin: 0; background: #0b1020; color: #eef2ff; }
+    header { padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; background: #111735; border-bottom: 1px solid #1b2450; }
+    header h1 { font-size: 18px; margin: 0; color: #a7b4ff; letter-spacing: .3px; }
+    .pill { padding: 6px 10px; border-radius: 999px; font-size: 12px; background: #1b2450; border: 1px solid #2a3875; color: #c9d1ff;}
+    .btn { background: #2f3b88; border: 1px solid #3e4cb0; color: #fff; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 600;}
+    .btn[disabled] { opacity: .6; cursor: not-allowed; }
+    main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+    .card { background: #0f1633; border: 1px solid #1b2450; border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    .row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+    .row label { font-size: 12px; color: #a7b4ff; display: block; margin-bottom: 6px;}
+    .row input { width: 100%; padding: 10px; border-radius: 10px; background: #0b1020; border: 1px solid #26306c; color: #eaf0ff; }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .results { display: grid; gap: 10px; }
+    .person { background:#0b1020; border:1px solid #1b2450; border-radius: 12px; padding: 12px; display:flex; justify-content: space-between; align-items: center;}
+    .muted { color: #9aa6ff; font-size: 12px; }
+    .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WeRfamily — MVP</h1>
+    <div class="actions">
+      <span id="authBadge" class="pill">Verificando conexão…</span>
+      <button id="btnLogin" class="btn">Conectar ao FamilySearch</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h3 style="margin:0 0 10px 0;">Busca no FamilySearch</h3>
+      <div class="row">
+        <div>
+          <label for="given">Nome</label>
+          <input id="given" placeholder="ex.: Maria" />
+        </div>
+        <div>
+          <label for="surname">Sobrenome</label>
+          <input id="surname" placeholder="ex.: Silva" />
+        </div>
+        <div>
+          <label for="year">Ano (nasc.)</label>
+          <input id="year" placeholder="ex.: 1900" />
+        </div>
+        <div style="grid-column: span 2;">
+          <label for="place">Local (nasc.)</label>
+          <input id="place" placeholder="ex.: Pernambuco, Brasil" />
+        </div>
+        <div>
+          <label for="count">Qtd.</label>
+          <input id="count" value="20" />
+        </div>
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button id="btnSearch" class="btn">Buscar</button>
+        <span class="muted">Usa `/persons/matches?force=fallback` sob o capô.</span>
+      </div>
+    </section>
+
+    <section id="results" class="results"></section>
+
+    <section class="card">
+      <h3 style="margin:0 0 10px 0;">Clonar Snapshot (Casal base)</h3>
+      <div class="row">
+        <div>
+          <label for="husband">PID do marido</label>
+          <input id="husband" placeholder="ex.: KW7T-Z2P" />
+        </div>
+        <div>
+          <label for="wife">PID da esposa</label>
+          <input id="wife" placeholder="ex.: XXXX-YYY" />
+        </div>
+        <div>
+          <label for="desc">Profundidade Desc.</label>
+          <input id="desc" value="3" />
+        </div>
+        <div>
+          <label for="asc">Profundidade Asc.</label>
+          <input id="asc" value="1" />
+        </div>
+        <div style="grid-column: span 2;">
+          <label for="family">Slug da família</label>
+          <input id="family" value="default" />
+        </div>
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button id="btnClone" class="btn">Clonar snapshot</button>
+        <a id="lnkView" class="pill" href="#" target="_blank" style="text-decoration:none; display:none;">Ver snapshot</a>
+      </div>
+      <div id="cloneMsg" class="muted" style="margin-top:8px;"></div>
+    </section>
+  </main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function getJSON(url, opts={}) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.json();
+}
+
+async function checkAuth() {
+  try {
+    const s = await getJSON("/auth/status");
+    if (s.connected) {
+      $("authBadge").textContent = s.user?.name ? `Conectado como ${s.user.name}` : "Conectado ao FamilySearch";
+      $("btnLogin").disabled = true;
+    } else {
+      $("authBadge").textContent = "Desconectado";
+      $("btnLogin").disabled = false;
+    }
+  } catch {
+    $("authBadge").textContent = "Desconhecido";
+    $("btnLogin").disabled = false;
+  }
+}
+
+$("btnLogin").onclick = () => {
+  window.location.href = "/login";
+};
+
+$("btnSearch").onclick = async () => {
+  const body = {
+    name: [($("given").value || "").trim(), ($("surname").value || "").trim()].filter(Boolean).join(" "),
+    birth_year: ($("year").value || "").trim() || undefined,
+    birth_place: ($("place").value || "").trim() || undefined,
+    count: parseInt($("count").value || "20", 10)
+  };
+  if (!body.name) {
+    alert("Informe ao menos Nome ou Sobrenome.");
+    return;
+  }
+  try {
+    $("btnSearch").disabled = true;
+    const data = await getJSON("/persons/matches?force=fallback", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    renderResults(data?.data || []);
+  } catch (e) {
+    console.error(e);
+    alert("Erro na busca.");
+  } finally {
+    $("btnSearch").disabled = false;
+  }
+};
+
+function renderResults(items) {
+  const host = $("results");
+  host.innerHTML = "";
+  if (!items.length) {
+    host.innerHTML = `<div class="card muted">Nenhum resultado.</div>`;
+    return;
+  }
+  for (const it of items) {
+    const p = it.person || {};
+    const id = p.id || "(sem id)";
+    const name = p.display?.name || "(sem nome)";
+    const birth = p.display?.birthDate || "";
+    const place = p.display?.birthPlace || "";
+    const portrait = p.links?.portrait?.href ? `<a class="pill" href="${p.links.portrait.href}" target="_blank">Foto</a>` : "";
+    const view = p.links?.person?.href ? `<a class="pill" href="${p.links.person.href}" target="_blank">Ver no FS</a>` : "";
+
+    const el = document.createElement("div");
+    el.className = "person";
+    el.innerHTML = `
+      <div>
+        <div><strong>${name}</strong> <span class="mono muted">${id}</span></div>
+        <div class="muted">${[birth, place].filter(Boolean).join(" • ")}</div>
+      </div>
+      <div class="actions">
+        ${portrait}
+        ${view}
+        <button class="btn" data-pid="${id}" data-role="select">Selecionar</button>
+      </div>
+    `;
+    host.appendChild(el);
+  }
+
+  // Selecionar preenche os campos do casal-base
+  host.querySelectorAll('button[data-role="select"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const pid = btn.getAttribute("data-pid");
+      const h = $("husband").value.trim();
+      if (!h) $("husband").value = pid;
+      else $("wife").value = pid;
+      window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'});
+    });
+  });
+}
+
+$("btnClone").onclick = async () => {
+  const params = new URLSearchParams({
+    husband: $("husband").value.trim(),
+    wife: $("wife").value.trim(),
+    desc: $("desc").value.trim() || "3",
+    asc: $("asc").value.trim() || "1",
+    family: $("family").value.trim() || "default",
+  });
+  if (!params.get("husband") && !params.get("wife")) {
+    alert("Informe pelo menos o PID do marido ou da esposa.");
+    return;
+  }
+  try {
+    $("btnClone").disabled = true;
+    $("cloneMsg").textContent = "Clonando…";
+    const r = await getJSON(`/tree/clone?${params.toString()}`, { method: "POST" });
+    $("cloneMsg").textContent = `OK! Pessoas=${r.stats?.persons} Relações=${r.stats?.relations}`;
+    const slug = r.family || params.get("family");
+    $("lnkView").href = `/family/${encodeURIComponent(slug)}/tree`;
+    $("lnkView").style.display = "inline-block";
+  } catch (e) {
+    console.error(e);
+    $("cloneMsg").textContent = "Falha ao clonar snapshot.";
+  } finally {
+    $("btnClone").disabled = false;
+  }
+};
+
+checkAuth();
+</script>
+</body>
+</html>

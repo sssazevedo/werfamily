@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, user-scalable=no"
+  />
+  <title>WeRfamily — MVP</title>
+
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React (CDN) + Babel para JSX inline -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* toques leves */
+    .card {
+      @apply bg-white rounded-2xl shadow p-6 border border-gray-100;
+    }
+    .btn {
+      @apply rounded-2xl px-4 py-2 transition shadow;
+    }
+    .btn-primary {
+      @apply bg-indigo-600 text-white hover:opacity-90;
+    }
+    .btn-ghost {
+      @apply bg-white border border-gray-200 hover:bg-gray-50;
+    }
+    .btn-success {
+      @apply bg-emerald-600 text-white hover:opacity-90;
+    }
+    .input {
+      @apply rounded-xl border border-gray-300 px-3 py-2 bg-white w-full;
+    }
+    .chip {
+      @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm border;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div id="root" class="max-w-6xl mx-auto px-4 py-8"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [auth, setAuth] = useState({ connected: false, user: null });
+      const [name, setName] = useState("Maria Silva");
+      const [yearFrom, setYearFrom] = useState("1880");
+      const [yearTo, setYearTo] = useState("1920");
+      const [place, setPlace] = useState("Alagoas, Pernambuco...");
+      const [count, setCount] = useState(20);
+      const [loading, setLoading] = useState(false);
+      const [results, setResults] = useState([]);
+      const [nextOffset, setNextOffset] = useState(null);
+      const [pid, setPid] = useState("");
+
+      // Checa status de login para alternar o botão
+      useEffect(() => {
+        (async () => {
+          try {
+            const res = await fetch("/auth/status", { credentials: "include" });
+            const json = await res.json();
+            setAuth(json || { connected: false });
+          } catch {
+            setAuth({ connected: false });
+          }
+        })();
+      }, []);
+
+      const queryMatches = async (opts = {}) => {
+        setLoading(true);
+        try {
+          // Monta payload de forma resiliente ao backend
+          const body = {
+            name: name?.trim() || undefined,
+            // Se você tiver suporte a range, pode enviar min/max;
+            // mantendo compat com o backend atual:
+            birth_year:
+              yearFrom && yearTo && yearFrom === yearTo
+                ? parseInt(yearFrom, 10)
+                : undefined,
+            birth_place: place?.trim() ? place.trim() : undefined,
+            count: Number(count) || 20,
+            ...(opts.extra || {}),
+          };
+
+          const url = opts.forceFallback
+            ? "/persons/matches?force=fallback"
+            : "/persons/matches";
+
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(body),
+          });
+
+          const json = await res.json();
+
+          if (!json.ok) {
+            alert(json?.data?.errors?.[0]?.message || json?.error || "Erro na busca.");
+            setResults([]);
+            setNextOffset(null);
+            return;
+          }
+
+          // A rota já retorna scores; normaliza para um array
+          const items = Array.isArray(json.data) ? json.data : [];
+          setResults(items);
+          setNextOffset(json.next_offset ?? null);
+        } catch (e) {
+          console.error(e);
+          alert("Falha ao buscar. Verifique a sessão e tente novamente.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const loadMore = async () => {
+        if (!nextOffset) return;
+        await queryMatches({ extra: { offset: nextOffset } });
+      };
+
+      const loadTree = async (fsid, depth = 3) => {
+        if (!fsid) return;
+        const ok = confirm(`Carregar árvore para ${fsid} (profundidade ${depth})?`);
+        if (!ok) return;
+        try {
+          setLoading(true);
+          const res = await fetch(`/tree/load?fsid=${encodeURIComponent(fsid)}&depth=${depth}`, {
+            method: "POST",
+            credentials: "include",
+          });
+          const json = await res.json();
+          if (!json.ok) {
+            alert(json.msg || "Falha ao carregar árvore.");
+            return;
+          }
+          alert(`Árvore carregada! Pessoas: ${json.stats?.persons ?? 0}, relações: ${json.stats?.relations ?? 0}`);
+        } catch (e) {
+          console.error(e);
+          alert("Erro ao carregar árvore.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const openFS = (pid) => {
+        if (!pid) return;
+        window.open(`https://www.familysearch.org/tree/person/details/${pid}`, "_blank");
+      };
+
+      return (
+        <div className="space-y-8">
+          {/* Header */}
+          <header className="flex items-center justify-between">
+            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
+              WeRfamily — <span className="text-slate-500">MVP</span>
+            </h1>
+            <div className="flex items-center gap-3">
+              {auth.connected ? (
+                <button
+                  className="btn btn-ghost cursor-default opacity-80"
+                  title={auth.user?.name ? `Conectado como ${auth.user.name}` : "Conectado"}
+                  disabled
+                >
+                  {auth.user?.name ? `Conectado ✓ (${auth.user.name})` : "Conectado ✓"}
+                </button>
+              ) : (
+                <a
+                  href="/login"
+                  className="btn btn-ghost"
+                  title="Conectar ao FamilySearch"
+                >
+                  Conectar ao FamilySearch
+                </a>
+              )}
+            </div>
+          </header>
+
+          {/* Form de busca */}
+          <section className="card">
+            <div className="grid md:grid-cols-5 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Nome (ex.: "Maria Silva")</label>
+                <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Ano nasc. de</label>
+                <input className="input" value={yearFrom} onChange={(e) => setYearFrom(e.target.value)} placeholder="ex.: 1880" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Ano nasc. até</label>
+                <input className="input" value={yearTo} onChange={(e) => setYearTo(e.target.value)} placeholder="ex.: 1920" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Local de nascimento (contém)</label>
+                <input className="input" value={place} onChange={(e) => setPlace(e.target.value)} placeholder="ex.: Alagoas, Pernambuco..." />
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Qtde</label>
+                <input
+                  className="input w-28"
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={count}
+                  onChange={(e) => setCount(e.target.value)}
+                />
+              </div>
+
+              <button
+                className="btn btn-primary mt-6"
+                onClick={() => queryMatches({ forceFallback: true })}
+                disabled={loading}
+              >
+                {loading ? "Buscando..." : "Buscar"}
+              </button>
+
+              <button
+                className="btn btn-ghost mt-6 disabled:opacity-50"
+                onClick={loadMore}
+                disabled={!nextOffset || loading}
+                title={nextOffset ? `Carregar mais (offset ${nextOffset})` : "Sem mais resultados"}
+              >
+                Mais resultados
+              </button>
+            </div>
+
+            {/* Abrir por ID (PID) */}
+            <div className="mt-6 border-t pt-6">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Abrir por ID (PID)</label>
+                  <input
+                    className="input w-56"
+                    placeholder="ex.: KW7T-Z2P"
+                    value={pid}
+                    onChange={(e) => setPid(e.target.value.trim().toUpperCase())}
+                  />
+                </div>
+                <button
+                  className="btn btn-success"
+                  onClick={() => pid && loadTree(pid, 3)}
+                  disabled={!pid || loading}
+                >
+                  Carregar árvore (PID)
+                </button>
+                {pid && (
+                  <button className="btn btn-ghost" onClick={() => openFS(pid)}>
+                    Ver no FamilySearch
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Lista de resultados */}
+          <section className="grid md:grid-cols-2 gap-6">
+            {results.length === 0 && (
+              <div className="md:col-span-2 text-slate-500">
+                Nenhum resultado ainda. Faça uma busca para começar.
+              </div>
+            )}
+
+            {results.map((item, idx) => {
+              const p = item.person || {};
+              const display = p.display || {};
+              const score = typeof item.score === "number" ? item.score.toFixed(1) : "—";
+              const personId = p.id || "";
+              const birth =
+                (display.birthDate ? display.birthDate : "?") +
+                (display.birthPlace ? ` — ${display.birthPlace}` : "");
+
+              return (
+                <div key={personId || idx} className="card">
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="text-xl font-semibold">{display.name || "Sem nome"}</h3>
+                    <span className="text-sm text-slate-500">score {score}</span>
+                  </div>
+
+                  <dl className="mt-3 space-y-1 text-sm">
+                    <div><dt className="font-semibold inline">ID:</dt> <dd className="inline">{personId || "—"}</dd></div>
+                    <div><dt className="font-semibold inline">Gênero:</dt> <dd className="inline">{display.gender || "?"}</dd></div>
+                    <div><dt className="font-semibold inline">Nascimento:</dt> <dd className="inline">{birth}</dd></div>
+                    <div><dt className="font-semibold inline">Óbito:</dt> <dd className="inline">{display.deathDate || "?"}</dd></div>
+                  </dl>
+
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => alert(`Selecionado: ${personId}`)}
+                    >
+                      Selecionar
+                    </button>
+                    <button
+                      className="btn btn-success"
+                      onClick={() => loadTree(personId, 3)}
+                    >
+                      Carregar árvore (3)
+                    </button>
+                    <button className="btn btn-ghost" onClick={() => openFS(personId)}>
+                      Ver no FamilySearch
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

@@ -5,7 +5,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, redirect, request, session, url_for, render_template
 from sqlalchemy.exc import IntegrityError
 from typing import Any, Dict, List, Tuple, Optional
-from functools import wraps # <<< NOVO: Importe o wraps para criar o decorator
+from functools import wraps
 
 # Suas funções auxiliares (devem permanecer no arquivo)
 try: from ..infra.familysearch.fs_routes import FS_BASE as API_BASE_URL
@@ -32,7 +32,7 @@ def _format_node(details: Dict) -> Dict:
     gender = "Male" if "Male" in gender_type else "Female" if "Female" in gender_type else "Unknown"
     return { "id": details.get("id"), "name": display.get("name"), "gender": gender, "birth": {"date": display.get("birthDate"), "place": display.get("birthPlace")}, "death": {"date": display.get("deathDate"), "place": display.get("deathPlace")}, "living": details.get("living", False) }
 def _upsert_person(db, p_data: Dict):
-    from ..infra.db.models import Person # Import local para evitar ciclo
+    from ..infra.db.models import Person
     p = db.get(Person, p_data["id"]);
     if not p: p = Person(id=p_data["id"]); db.add(p);
     p.name, p.gender = p_data.get("name"), p_data.get("gender")
@@ -40,7 +40,7 @@ def _upsert_person(db, p_data: Dict):
     p.birth, p.birth_place = birth.get("date"), birth.get("place")
     p.death, p.death_place = death.get("date"), death.get("place")
 def _ensure_edge(db, e_data: Dict):
-    from ..infra.db.models import Relation # Import local para evitar ciclo
+    from ..infra.db.models import Relation
     typ = e_data.get("type"); src = e_data.get("from") or e_data.get("a"); dst = e_data.get("to") or e_data.get("b")
     if not all([typ, src, dst]): return False
     if typ == 'couple': src, dst = tuple(sorted((src, dst)))
@@ -60,22 +60,18 @@ from ..infra.db.models import SessionLocal, User, Invite, Membership, Snapshot, 
 
 auth_bp = Blueprint("auth_bp", __name__)
 
-# <<< NOVO: Decorator para proteger rotas >>>
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         token = session.get("fs_token")
         exp = session.get("fs_token_exp", 0)
-        # Se não houver token ou se ele tiver expirado, redireciona para a página de login
         if not token or time.time() > exp:
-            return redirect(url_for("auth_bp.index")) # Redireciona para a rota raiz
+            return redirect(url_for("auth_bp.index"))
         return f(*args, **kwargs)
     return decorated_function
 
-# <<< NOVA ROTA RAIZ NO BLUEPRINT >>>
 @auth_bp.route("/")
 def index():
-    """Página inicial. Mostra a tela de login ou redireciona para o app se já logado."""
     if "fs_token" in session and time.time() < session.get("fs_token_exp", 0):
         return redirect(url_for("app_main"))
     return render_template("login.html")
@@ -84,8 +80,9 @@ def index():
 def auth_status():
     token = session.get("fs_token"); exp = session.get("fs_token_exp", 0); user_fs_id = session.get("user_fs_id")
     ok = bool(token) and (time.time() < exp if exp else True) and bool(user_fs_id)
-    user_info = {"fs_id": user_fs_id, "name": None}
-    if ok:
+    user_info = {"fs_id": user_fs_id, "name": session.get("user_name")}
+    
+    if ok and not user_info["name"]:
         db = SessionLocal();
         try:
             user = db.get(User, user_fs_id)
@@ -134,20 +131,23 @@ def callback():
             else: user.name = contact_name
             db.commit()
             session["user_fs_id"] = fs_id
-            session["user_name"] = contact_name # <<< Armazena o nome na sessão
+            session["user_name"] = contact_name
+            # <<< MUDANÇA: Salva o Person ID do usuário na sessão >>>
+            session["user_person_id"] = person_id
 
             if invite_token:
-                # ... (sua lógica de processamento de convite e pathfinder continua aqui) ...
+                # ... (sua lógica de convite) ...
                 pass
 
-    except requests.RequestException as e: print(f"AVISO: Falha ao buscar dados do utilizador: {e}"); session["user_fs_id"] = None
-    finally: db.close()
-
-    # <<< MODIFICAÇÃO: Redireciona para a aplicação principal >>>
+    except requests.RequestException as e: 
+        print(f"AVISO: Falha ao buscar dados do utilizador: {e}")
+        session.clear()
+    finally: 
+        db.close()
+    
     return redirect(url_for("app_main"))
 
 @auth_bp.route("/logout", methods=["POST", "GET"])
 def logout():
     session.clear()
-    # <<< MODIFICAÇÃO: Redireciona para a página de login >>>
     return redirect(url_for("auth_bp.index"))

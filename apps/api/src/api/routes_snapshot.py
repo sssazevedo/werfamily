@@ -1,4 +1,5 @@
-# apps/api/src/api/routes_snapshot.py
+# apps/api/src/api/routes_snapshot.py - CÓDIGO INTEGRAL ATUALIZADO
+
 from __future__ import annotations
 import os, time, traceback, json
 from typing import Any, Dict, List, Tuple
@@ -8,9 +9,13 @@ from flask import Blueprint, jsonify, request, session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import or_
 
+from .routes_auth import login_required
+# <<< MUDANÇA: Importa o pathfinder para ser usado na clonagem >>>
+from .pathfinder_logic import find_kinship_path
+
 from ..infra.db.models import (
     init_db, SessionLocal, Person, Relation,
-    Snapshot, SnapshotNode, SnapshotEdge, User, Family, Membership, UserPath
+    Snapshot, SnapshotNode, SnapshotEdge, User, Family, Membership, UserPath, Post, Media
 )
 try: from ..infra.familysearch.fs_routes import FS_BASE as API_BASE_URL
 except Exception: API_BASE_URL = "https://apibeta.familysearch.org"
@@ -23,7 +28,9 @@ def _auth_token() -> str | None:
     return session.get("fs_token")
 
 def _headers_json(token: str) -> Dict[str, str]: return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
 def _me(token: str) -> Dict[str, Any]: r = requests.get(f"{API_BASE_URL}/platform/users/current", headers=_headers_json(token), timeout=20); r.raise_for_status(); return r.json()
+
 def _fetch_person_with_relatives(token: str, pid: str) -> Tuple[Dict | None, List[str], List[str], List[str]]:
     url = f"{API_BASE_URL}/platform/tree/persons/{pid}?personDetails=true&children=true"
     try: r = requests.get(url, headers=_headers_json(token), timeout=20); r.raise_for_status(); data = r.json()
@@ -40,10 +47,12 @@ def _fetch_person_with_relatives(token: str, pid: str) -> Tuple[Dict | None, Lis
             if p1 == pid and p2: spouses.add(p2)
             elif p2 == pid and p1: spouses.add(p1)
     return details, list(parents), list(spouses), list(children)
+
 def _format_node(details: Dict) -> Dict:
     display = details.get("display") or {}; gender_type = (details.get("gender") or {}).get("type", "")
     gender = "Male" if "Male" in gender_type else "Female" if "Female" in gender_type else "Unknown"
     return { "id": details.get("id"), "name": display.get("name"), "gender": gender, "birth": {"date": display.get("birthDate"), "place": display.get("birthPlace")}, "death": {"date": display.get("deathDate"), "place": display.get("deathPlace")}, "living": details.get("living", False) }
+
 def _build_tree_iteratively(token: str, roots: List[str], desc_depth: int) -> Tuple[List[Dict], List[Dict]]:
     nodes, edges = {}, {}; processed_ids = set(); queue = deque([(pid, 0) for pid in roots])
     while queue:
@@ -62,6 +71,7 @@ def _build_tree_iteratively(token: str, roots: List[str], desc_depth: int) -> Tu
                 if child_id not in processed_ids: queue.append((child_id, depth + 1))
                 edges[tuple(sorted((pid, child_id)))] = {"type": "parentChild", "from": pid, "to": child_id}
     return list(nodes.values()), list(edges.values())
+
 def _upsert_person(db, p_data: Dict):
     p = db.get(Person, p_data["id"]);
     if not p: p = Person(id=p_data["id"]); db.add(p)
@@ -69,6 +79,7 @@ def _upsert_person(db, p_data: Dict):
     birth, death = p_data.get("birth") or {}, p_data.get("death") or {}
     p.birth, p.birth_place = birth.get("date"), birth.get("place")
     p.death, p.death_place = death.get("date"), death.get("place")
+
 def _ensure_edge(db, e_data: Dict):
     typ = e_data.get("type"); src = e_data.get("from") or e_data.get("a"); dst = e_data.get("to") or e_data.get("b")
     if not all([typ, src, dst]): return
@@ -79,43 +90,118 @@ def _ensure_edge(db, e_data: Dict):
     except IntegrityError: db.rollback()
 
 @snapshot_bp.post("/snapshot/clone")
+@login_required
 def snapshot_clone():
-    token = _auth_token(); user_fs_id = session.get("user_fs_id")
-    if not token or not user_fs_id: return jsonify({"ok": False, "error": "not_authenticated"}), 401
+    token = _auth_token()
+    user_fs_id = session.get("user_fs_id")
+    # <<< MUDANÇA: Obtém o Person ID do usuário da sessão >>>
+    user_person_id = session.get("user_person_id")
+    
+    if not all([token, user_fs_id, user_person_id]):
+        return jsonify({"ok": False, "error": "Sessão inválida ou incompleta."}), 401
+    
     body = request.get_json(silent=True) or {}
     husband, wife = (body.get("husband") or "").strip(), (body.get("wife") or "").strip()
     desc_d = int(body.get("desc_depth") or 0)
     slug = (body.get("slug") or "default").strip()
+    
     roots = [pid for pid in [husband, wife] if pid]
-    if not roots: return jsonify({"ok": False, "error": "missing_roots"}), 400
-    nodes, edges = _build_tree_iteratively(token, roots, desc_d)
+    if not roots:
+        return jsonify({"ok": False, "error": "ID raiz obrigatório."}), 400
+    
+    ancestor_pid = roots[0] # Usa o primeiro ID (marido) como o ancestral alvo
+    
+    # <<< INÍCIO DA NOVA LÓGICA DE CLONAGEM >>>
+    
+    # 1. Encontra a linhagem direta do usuário até o ancestral
+    kinship_path = find_kinship_path(user_person_id, ancestor_pid, token) or []
+
+    # 2. Busca a árvore de descendentes do ancestral (como antes)
+    descendant_nodes, descendant_edges = _build_tree_iteratively(token, roots, desc_d)
+    
+    # 3. Mescla os dados, evitando duplicatas
+    final_nodes = {node['id']: node for node in descendant_nodes}
+    final_edges = {}
+    for edge in descendant_edges:
+        key = tuple(sorted((edge.get('a'), edge.get('b')))) if edge['type'] == 'couple' else (edge.get('from'), edge.get('to'))
+        final_edges[key] = edge
+
+    # 4. Busca os detalhes das pessoas na linhagem e adiciona ao conjunto final
+    for pid in kinship_path:
+        if pid not in final_nodes:
+            details, _, spouse_ids, _ = _fetch_person_with_relatives(token, pid)
+            if details:
+                final_nodes[pid] = _format_node(details)
+                for spouse_id in spouse_ids:
+                    if spouse_id not in final_nodes:
+                        s_details, _, _, _ = _fetch_person_with_relatives(token, spouse_id)
+                        if s_details: final_nodes[spouse_id] = _format_node(s_details)
+
+    # 5. Adiciona as relações de parentesco da linhagem
+    for i in range(len(kinship_path) - 1):
+        child_id, parent_id = kinship_path[i], kinship_path[i+1]
+        key = (parent_id, child_id)
+        if key not in final_edges:
+            final_edges[key] = {"type": "parentChild", "from": parent_id, "to": child_id}
+
+    nodes = list(final_nodes.values())
+    edges = list(final_edges.values())
+
+    # <<< FIM DA NOVA LÓGICA DE CLONAGEM >>>
+    
     init_db(); db = SessionLocal()
     try:
         family = db.query(Family).filter_by(slug=slug).first()
         if not family:
             family = Family(slug=slug, name=slug); db.add(family); db.flush()
             membership = Membership(user_fs_id=user_fs_id, family_id=family.id, role="admin"); db.add(membership)
+        
         existing = db.query(Snapshot).filter_by(slug=slug).first()
-        if existing: db.query(SnapshotNode).filter_by(snapshot_id=existing.id).delete(); db.query(SnapshotEdge).filter_by(snapshot_id=existing.id).delete(); db.delete(existing);
+        if existing: 
+            db.query(SnapshotNode).filter_by(snapshot_id=existing.id).delete()
+            db.query(SnapshotEdge).filter_by(snapshot_id=existing.id).delete()
+            db.delete(existing)
+            db.flush() # Garante que a exclusão seja processada antes da inserção
+        
         snap = Snapshot(family_id=family.id, slug=slug, root_husband_id=husband, root_wife_id=wife, desc_depth=desc_d, asc_depth=0)
         db.add(snap); db.flush()
-        for p_data in nodes: _upsert_person(db, p_data); db.add(SnapshotNode(snapshot_id=snap.id, person_id=p_data["id"]))
-        for e_data in edges: _ensure_edge(db, e_data); src = e_data.get("from") or e_data.get("a"); dst = e_data.get("to") or e_data.get("b"); db.add(SnapshotEdge(snapshot_id=snap.id, type=e_data["type"], src_id=src, dst_id=dst))
+        
+        for p_data in nodes:
+            _upsert_person(db, p_data)
+            db.add(SnapshotNode(snapshot_id=snap.id, person_id=p_data["id"]))
+        
+        for e_data in edges:
+            _ensure_edge(db, e_data)
+            src = e_data.get("from") or e_data.get("a")
+            dst = e_data.get("to") or e_data.get("b")
+            db.add(SnapshotEdge(snapshot_id=snap.id, type=e_data["type"], src_id=src, dst_id=dst))
+        
         db.commit()
-    except Exception as e: db.rollback(); traceback.print_exc(); return jsonify({"ok": False, "error": "database_error", "detail": str(e)}), 500
-    finally: db.close()
+    except Exception as e: 
+        db.rollback()
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "Erro no banco de dados durante a clonagem.", "detail": str(e)}), 500
+    finally: 
+        db.close()
     
-    # Adiciona a flag isAdmin=True porque quem clona é sempre admin
-    snapshot_json = { "ok": True, "slug": slug, "roots": roots, "elements": {"nodes": [{"data": n} for n in nodes], "edges": [{"data": e} for e in edges]}, "isAdmin": True }
+    # <<< MUDANÇA: Inclui o kinship_path na resposta para o frontend >>>
+    snapshot_json = { 
+        "ok": True, 
+        "slug": slug, 
+        "roots": roots, 
+        "elements": {"nodes": [{"data": n} for n in nodes], "edges": [{"data": e} for e in edges]}, 
+        "isAdmin": True,
+        "kinship_path": kinship_path 
+    }
     return jsonify(snapshot_json), 200
 
 @snapshot_bp.get("/snapshot/<slug>")
+@login_required
 def snapshot_get(slug: str):
     user_fs_id = session.get("user_fs_id");
     if not user_fs_id: return jsonify({"ok": False, "error": "not_authenticated"}), 401
     db = SessionLocal()
     try:
-        # --- ALTERAÇÃO AQUI: Verifica o papel do utilizador na mesma query ---
         membership = db.query(Membership).join(Family).join(Snapshot).filter(
             Snapshot.slug == slug,
             Membership.user_fs_id == user_fs_id
@@ -123,7 +209,6 @@ def snapshot_get(slug: str):
 
         if not membership: return jsonify({"ok": False, "error": "not_found_or_forbidden"}), 404
         
-        # O snapshot existe e pertence à família da qual o utilizador é membro
         snap = db.query(Snapshot).filter_by(slug=slug).first()
         is_admin = membership.role == "admin"
         
@@ -155,7 +240,6 @@ def snapshot_get(slug: str):
                 edges_map[key] = {"type": r.rel_type, "from": r.src_id, "to": r.dst_id, "a": r.src_id, "b": r.dst_id}
         edges = list(edges_map.values())
 
-        # --- ALTERAÇÃO FINAL: Adiciona `isAdmin` à resposta ---
         snapshot_json = { 
             "ok": True, 
             "slug": snap.slug, 
@@ -169,13 +253,63 @@ def snapshot_get(slug: str):
         db.close()
 
 @snapshot_bp.get("/snapshot")
+@login_required
 def snapshot_list():
     user_fs_id = session.get("user_fs_id");
     if not user_fs_id: return jsonify({"ok": True, "items": []})
     db = SessionLocal()
     try:
-        snapshots = db.query(Snapshot).join(Family).join(Membership).filter(Membership.user_fs_id == user_fs_id).order_by(Snapshot.created_at.desc()).all()
-        items = [{"slug": s.slug} for s in snapshots]
+        # <<< MUDANÇA: Retorna o papel do usuário para cada snapshot >>>
+        # A query agora junta Snapshot, Family e Membership para buscar o papel do usuário logado em cada família.
+        snapshots_with_roles = db.query(
+            Snapshot,
+            Membership.role
+        ).join(
+            Family, Snapshot.family_id == Family.id
+        ).join(
+            Membership, (Membership.family_id == Family.id) & (Membership.user_fs_id == user_fs_id)
+        ).order_by(Snapshot.created_at.desc()).all()
+        
+        items = [{"slug": s.slug, "role": role} for s, role in snapshots_with_roles]
         return jsonify({"ok": True, "items": items})
+    finally:
+        db.close()
+
+@snapshot_bp.route("/snapshot/<string:slug>", methods=["DELETE"])
+@login_required
+def delete_snapshot(slug: str):
+    user_fs_id = session.get("user_fs_id")
+    db = SessionLocal()
+    try:
+        snapshot = db.query(Snapshot).filter(Snapshot.slug == slug).first()
+        if not snapshot:
+            return jsonify({"ok": False, "error": "Snapshot não encontrado."}), 404
+
+        membership = db.query(Membership).filter(
+            Membership.family_id == snapshot.family_id,
+            Membership.user_fs_id == user_fs_id
+        ).first()
+
+        if not membership or membership.role != 'admin':
+            return jsonify({"ok": False, "error": "Você não tem permissão para excluir este snapshot."}), 403
+
+        post_count = db.query(Post).filter(Post.family_id == snapshot.family_id).count()
+        if post_count > 0:
+            return jsonify({"ok": False, "error": f"Não é possível excluir. Existem {post_count} publicações associadas a esta família."}), 409
+
+        media_count = db.query(Media).filter(Media.family_id == snapshot.family_id).count()
+        if media_count > 0:
+            return jsonify({"ok": False, "error": f"Não é possível excluir. Existem {media_count} fotos associadas a esta família."}), 409
+
+        db.delete(snapshot)
+        db.commit()
+
+        return jsonify({"ok": True, "message": "Snapshot excluído com sucesso."})
+
+    except Exception as e:
+        db.rollback()
+        print(f"!!! ERRO ao deletar snapshot {slug}: {e} !!!")
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "Erro interno do servidor ao tentar excluir o snapshot."}), 500
     finally:
         db.close()

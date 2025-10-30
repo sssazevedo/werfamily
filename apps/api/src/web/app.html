@@ -11,7 +11,7 @@
     body{background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
     
     .header-logo { max-height: 60px; }
-    #graphWrap{border:1px dashed var(--border);border-radius:14px;overflow:auto;background:#fff;height:520px;padding:8px}
+    #graphWrap{border:1px dashed var(--border);border-radius:14px;overflow:auto;background:#fff;height:520px;padding:8px; position: relative;}
     svg{font:12px system-ui}
     .node { cursor: pointer; }
     .node circle{stroke:#fff;stroke-width:2px; transition: all 0.2s;}
@@ -61,17 +61,22 @@
     .gallery-item .delete-btn { top: 8px; right: 8px; color: white; background-color: rgba(0,0,0,0.3); border-radius: 50%; width: 28px; height: 28px; font-size: 1rem; display: flex; align-items: center; justify-content: center;}
     .gallery-item .delete-btn:hover { background-color: rgba(220, 53, 69, 0.8); }
     .gallery-item img[data-action="view-media"] { cursor: pointer; }
+    .snapshot-item-container { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .snapshot-item-container .btn-light { flex-grow: 1; }
+    .delete-snapshot-btn { flex-shrink: 0; }
+    #zoom-controls { position: absolute; top: 15px; right: 15px; z-index: 10; display: flex; flex-direction: column; gap: 5px; }
+    #zoom-controls .btn { background-color: rgba(255, 255, 255, 0.8); border: 1px solid var(--border); }
   </style>
 </head>
 <body>
   <div class="container py-3">
-    <header class="d-flex align-items-center justify-content-between mb-3">
-	  <div class="d-flex align-items-center gap-2">
+    <header class="d-flex align-items-center justify-content-center mb-3">
+	  <div class="flex-grow-1">
 		  <a href="{{ url_for('app_main') }}"><img src="{{ url_for('static', filename='images/logo.png') }}" alt="WeRfamily Logo" class="header-logo"></a>
-		  <span class="badge bg-warning text-dark">Beta</span>
 	  </div>
+      <span class="badge bg-warning text-dark mx-3">Beta</span>
 	  <div class="d-flex align-items-center gap-3">
-		<span id="userName" class="text-muted fw-bold">Carregando...</span>
+		<span id="userName" class="text-muted fw-bold">Olá, {{ user_name.split(' ')[0] if user_name else 'Usuário' }}</span>
         <a href="{{ url_for('about_page') }}" class="text-muted text-decoration-none small">Sobre</a>
         <a href="{{ url_for('auth_bp.logout') }}" class="btn btn-outline-secondary btn-sm">Desconectar</a>
 	  </div>
@@ -101,7 +106,11 @@
             <div class="col-md-4"><label for="rootHusband" class="form-label">ID do Marido (Raiz)</label><input id="rootHusband" class="form-control" placeholder="Obrigatório" /></div>
             <div class="col-md-4"><label for="rootWife" class="form-label">ID da Esposa (Raiz)</label><input id="rootWife" class="form-control" placeholder="Opcional" /></div>
             <div class="col-md-4"><label for="slug" class="form-label">Nome da Família</label><input id="slug" class="form-control" value="default"/></div>
-            <div class="col-md-3"><label for="descDepth" class="form-label">Gerações (desc.)</label><input id="descDepth" class="form-control" value="3" /></div>
+            <div class="col-md-3">
+				<label for="descDepth" class="form-label">Gerações (desc.)</label>
+				<input id="descDepth" class="form-control" type="number" value="2" max="2" min="1" />
+				<div class="form-text small">Limite de 2 gerações na versão Beta.</div>
+			</div>
             <div class="col-md-5 d-grid"><button id="btnClone" class="btn btn-primary mt-auto" type="button">Clonar Snapshot do FS</button></div>
         </div>
     </section>
@@ -118,7 +127,14 @@
         <div id="tab-tree" class="tab-pane active">
           <section class="card p-4">
             <h5 class="card-title mb-3">Visualização da Árvore</h5>
-            <div id="graphWrap"><svg id="graph" width="1600" height="1000"></svg></div>
+            <div id="graphWrap">
+                <div id="zoom-controls">
+                    <button id="zoom-in" class="btn btn-sm" title="Aproximar"><i class="bi bi-plus-lg"></i></button>
+                    <button id="zoom-out" class="btn btn-sm" title="Afastar"><i class="bi bi-dash-lg"></i></button>
+                    <button id="zoom-reset" class="btn btn-sm" title="Resetar visualização"><i class="bi bi-arrows-fullscreen"></i></button>
+                </div>
+                <svg id="graph" width="1600" height="1000"></svg>
+            </div>
             <hr class="my-4">
             <h5 class="card-title mb-3">Encontrar Parentesco no Snapshot</h5>
             <div class="row g-3 align-items-end">
@@ -147,7 +163,6 @@
             </div>
           </section>
         </div>
-
         <div id="tab-posts" class="tab-pane">
             <section id="postsSection" class="card p-4">
                 <h5 class="card-title mb-3">Mural da Família "<span class="familyName"></span>"</h5>
@@ -161,7 +176,6 @@
                 </div>
             </section>
         </div>
-
         <div id="tab-gallery" class="tab-pane">
             <section id="gallerySection" class="card p-4">
                 <h5 class="card-title mb-3">Galeria da Família "<span class="familyName"></span>"</h5>
@@ -175,7 +189,6 @@
                 </div>
             </section>
         </div>
-        
         <div id="tab-management" class="tab-pane">
             <section id="inviteSection" class="card p-4 mb-4">
                 <h5 class="card-title mb-3">Convidar para a Família "<span class="familyName"></span>"</h5>
@@ -210,12 +223,10 @@
   </div>
 
   <div id="toast" class="toast"></div>
-
   <div id="detailsPanel" class="details-panel">
     <button id="closePanelBtn" class="close-btn">&times;</button>
     <div id="panelContent"></div>
   </div>
-
   <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
@@ -229,6 +240,7 @@
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
@@ -241,19 +253,19 @@
     let _currentSnapshotPeople = [];
     let imageModal;
     let _currentUserId = null;
+    let _svg = null;
+    let _zoom = null;
 
-    async function updateUserInfo(){
+    async function fetchCurrentUserId(){
       try {
         const r = await fetch("/auth/status", {credentials:"include"}).then(r => r.json());
-        const userNameSpan = $("#userName");
         if (r.ok && r.user) {
-            userNameSpan.textContent = `Olá, ${r.user.name.split(' ')[0]}`;
             _currentUserId = r.user.fs_id;
         } else {
             window.location.href = '/';
         }
       } catch (e) {
-          console.error("Falha ao verificar status de autenticação", e);
+          console.error("Falha ao buscar ID do usuário", e);
           window.location.href = '/';
       }
     }
@@ -307,7 +319,7 @@
             const data = await r.json();
             if (data.ok) {
                 showToast(`Snapshot '${data.slug}' clonado!`);
-                drawSnapshot(data);
+                drawSnapshot(data, data.kinship_path || []);
                 showFamilySections(data.slug, data.isAdmin);
                 $("#btnRefreshSnapshots").click();
             } else {
@@ -316,7 +328,8 @@
                 hideFamilySections();
             }
 		} catch (e) { 
-			console.error(e); showToast("Erro de comunicação."); 
+			console.error(e); 
+			showToast("A clonagem falhou. A operação pode ter excedido os recursos do servidor. Tente com menos gerações."); 
 			hideFamilySections();
 		} finally {
 			btn.disabled = false;
@@ -325,22 +338,60 @@
 	});
 
     $("#btnRefreshSnapshots").addEventListener("click", async () => {
-        const listDiv = $('#snapshotList'); listDiv.textContent = 'Atualizando...';
+        const listDiv = $('#snapshotList');
+        listDiv.textContent = 'Atualizando...';
         try {
             const r = await fetch('/snapshot', {credentials: "include"});
             if (r.status === 401) { window.location.href = "/"; return; }
             const result = await r.json();
             if (result.ok && result.items.length > 0) {
                 listDiv.innerHTML = '';
-                result.items.forEach(snap => { 
-                    const item = document.createElement('button');
-                    item.className = 'snapshot-item btn btn-light w-100 mb-2 text-start d-flex justify-content-between align-items-center'; 
-                    item.innerHTML = `<span>${snap.slug}</span><i class="bi bi-chevron-right"></i>`; 
-                    item.onclick = () => loadAndDrawSnapshot(snap.slug); 
-                    listDiv.appendChild(item); 
+                result.items.forEach(snap => {
+                    const container = document.createElement('div');
+                    container.className = 'snapshot-item-container';
+                    container.id = `snapshot-container-${snap.slug}`;
+                    const loadBtn = document.createElement('button');
+                    loadBtn.className = 'snapshot-item btn btn-light w-100 text-start d-flex justify-content-between align-items-center'; 
+                    loadBtn.innerHTML = `<span>${snap.slug}</span><i class="bi bi-chevron-right"></i>`; 
+                    loadBtn.onclick = () => loadAndDrawSnapshot(snap.slug);
+                    container.appendChild(loadBtn);
+                    if (snap.role === 'admin') {
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'btn btn-outline-danger btn-sm delete-snapshot-btn';
+                        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+                        deleteBtn.title = 'Excluir Snapshot';
+                        deleteBtn.dataset.slug = snap.slug;
+                        container.appendChild(deleteBtn);
+                    }
+                    listDiv.appendChild(container);
                 });
             } else { listDiv.textContent = 'Nenhum snapshot salvo.'; }
         } catch (e) { console.error(e); listDiv.textContent = 'Erro ao atualizar.'; }
+    });
+
+    $('#snapshotList').addEventListener('click', async (e) => {
+        const target = e.target.closest('.delete-snapshot-btn');
+        if (!target) return;
+        const slug = target.dataset.slug;
+        if (!slug) return;
+        if (confirm(`Tem certeza que deseja excluir o snapshot "${slug}"? Esta ação não pode ser desfeita.`)) {
+            try {
+                const r = await fetch(`/snapshot/${slug}`, { method: 'DELETE', credentials: 'include' });
+                const res = await r.json();
+                if (r.ok) {
+                    showToast(res.message || "Snapshot excluído com sucesso.");
+                    if (_currentFamilySlug === slug) {
+                        hideFamilySections();
+                    }
+                    $("#btnRefreshSnapshots").click();
+                } else {
+                    showToast(`Erro: ${res.error || 'Não foi possível excluir.'}`);
+                }
+            } catch (err) {
+                console.error("Erro ao excluir snapshot:", err);
+                showToast("Erro de comunicação ao tentar excluir.");
+            }
+        }
     });
 
     async function loadAndDrawSnapshot(slug) {
@@ -353,22 +404,25 @@
                 drawSnapshot(data);
                 showFamilySections(slug, data.isAdmin);
                 showToast(`Snapshot '${slug}' carregado.`);
+                $("#btnRefreshSnapshots").click();
             } else { showToast(`Erro: ${data.error}`); hideFamilySections(); }
         } catch (e) { console.error(e); showToast('Erro de comunicação.'); hideFamilySections(); }
     }
     
     function setupTabs() {
         const tabNav = $('.tab-nav');
-        tabNav.addEventListener('click', (e) => {
-            const target = e.target;
-            if (!target.matches('.tab-link')) return;
-            const tabId = target.dataset.tab;
-            $$('.tab-link').forEach(link => link.classList.remove('active'));
-            $$('.tab-pane').forEach(pane => pane.classList.remove('active'));
-            target.classList.add('active');
-            $(`#${tabId}`).classList.add('active');
-            if (tabId === 'tab-management') loadManagementData(_currentFamilySlug);
-        });
+        if (tabNav) {
+            tabNav.addEventListener('click', (e) => {
+                const target = e.target;
+                if (!target.matches('.tab-link')) return;
+                const tabId = target.dataset.tab;
+                $$('.tab-link').forEach(link => link.classList.remove('active'));
+                $$('.tab-pane').forEach(pane => pane.classList.remove('active'));
+                target.classList.add('active');
+                $(`#${tabId}`).classList.add('active');
+                if (tabId === 'tab-management') loadManagementData(_currentFamilySlug);
+            });
+        }
     }
 
     function showFamilySections(slug, isAdmin = false) {
@@ -657,23 +711,52 @@
     }
     
     function drawGraphFromElements(elements, rootId, kinshipPath){
-      const svg=d3.select("#graph"); svg.selectAll("*").remove(); const nodes = (elements?.nodes||[]).map(n => n.data || n); const edges = (elements?.edges||[]).map(e => e.data || e); if(!nodes.length) { nodes.push({id:rootId, name:rootId, gender:""}); } const byId=new Map(nodes.map(n=>[n.id,n])); const parentChildEdges = edges.filter(e => e.type === 'parentChild'); const coupleEdges = edges.filter(e => e.type === 'couple'); const children=new Map(); for(const e of parentChildEdges){ const parentId = e.from || e.source; const childId = e.to || e.target; if(!children.has(parentId)) children.set(parentId,[]); children.get(parentId).push(childId); } const root=buildTree(rootId, byId, children); renderTree(svg, root, byId, coupleEdges, kinshipPath);
+      _svg = d3.select("#graph");
+      _svg.selectAll("*").remove();
+      const nodes = (elements?.nodes||[]).map(n => n.data || n);
+      const edges = (elements?.edges||[]).map(e => e.data || e);
+      if(!nodes.length) { nodes.push({id:rootId, name:rootId, gender:""}); }
+      const byId=new Map(nodes.map(n=>[n.id,n]));
+      const parentChildEdges = edges.filter(e => e.type === 'parentChild');
+      const coupleEdges = edges.filter(e => e.type === 'couple');
+      const children=new Map();
+      for(const e of parentChildEdges){ const parentId = e.from || e.source; const childId = e.to || e.target; if(!children.has(parentId)) children.set(parentId,[]); children.get(parentId).push(childId); }
+      const root=buildTree(rootId, byId, children);
+      renderTree(_svg, root, byId, coupleEdges, kinshipPath);
     }
     
     function buildTree(rootId, byId, children){
-      const mk = id => { const d = byId.get(id) || {id, name:id, gender:""}; return { id: id, name: d.name || id, pid: d.id || id, gender: d.gender || "", birth: d.birth, death: d.death, children: [] }; }; const seen=new Set(); function dfs(id){ if(seen.has(id)) return null; seen.add(id); const node = mk(id); if (children.has(id)) { for(const k of children.get(id)){ const ch = dfs(k); if(ch)node.children.push(ch); } } return node; } return dfs(rootId) || mk(rootId);
+      const mk = id => { const d = byId.get(id) || {id, name:id, gender:""}; return { id: id, name: d.name || id, pid: d.id || id, gender: d.gender || "", birth: d.birth, death: d.death, children: [] }; };
+      const seen=new Set();
+      function dfs(id){ if(seen.has(id)) return null; seen.add(id); const node = mk(id); if (children.has(id)) { for(const k of children.get(id)){ const ch = dfs(k); if(ch)node.children.push(ch); } } return node; }
+      return dfs(rootId) || mk(rootId);
     }
     
     function renderTree(svg, data, allNodesById, coupleEdges, kinshipPath){
-      const width=1600, dx=32, dy=280; const root=d3.hierarchy(data); d3.tree().nodeSize([dx,dy])(root); let x0=Infinity,x1=-x0; root.each(d=>{ if(d.x > x1) x1=d.x; if(d.x < 0) x0=d.x; }); svg.attr("viewBox",[-dy/2, x0-dx, width, x1-x0+dx*2].join(" ")); const g = svg.append("g"); const linkGroup = g.append("g"); const nodeGroup = g.append("g"); const allLinks = linkGroup.selectAll("path").data(root.links()).join("path").attr("class","link").attr("d", d3.linkHorizontal().x(d=>d.y).y(d=>d.x)); const allNodes = nodeGroup.selectAll("g").data(root.descendants()).join("g").attr("class","node").attr("transform", d => `translate(${d.y},${d.x})`); allNodes.on('click', (event, d) => { showDetailsPanel(d.data); }); allNodes.append("circle").attr("r", 8).attr("fill", d => { const g=(d.data.gender||"").toLowerCase(), s=getComputedStyle(document.documentElement); if(g.startsWith("m")||g==='male') return s.getPropertyValue('--male'); if(g.startsWith("f")||g==='female') return s.getPropertyValue('--female'); return s.getPropertyValue('--unk'); }); allNodes.each(function(d){ const grp=d3.select(this), label=`${d.data.name} (${d.data.pid})`; const tmp=grp.append("text").text(label).attr("opacity",0); const bb=tmp.node().getBBox(); tmp.remove(); grp.append("rect").attr("class","pill").attr("x",14).attr("y",-bb.height/2-4).attr("width",bb.width+20).attr("height",bb.height+8); grp.append("text").attr("x",24).attr("y",4).text(label).attr("fill","#111827"); }); const renderedNodes = new Map(root.descendants().map(d => [d.data.id, d])); const spouseOffset = 20; coupleEdges.forEach(edge => { const p1Id = edge.from || edge.a; const p2Id = edge.to || edge.b; let anchorNode = renderedNodes.get(p1Id), spouseId = p2Id; if (!anchorNode) { anchorNode = renderedNodes.get(p2Id); spouseId = p1Id; } if(anchorNode && !renderedNodes.has(spouseId)) { const spouseData = allNodesById.get(spouseId); if (!spouseData) return; const spouseX = anchorNode.x + spouseOffset; const spouseY = anchorNode.y; linkGroup.append('path').attr('class', 'couple-link').attr('d', `M${spouseY},${anchorNode.x} L${spouseY},${spouseX}`); const spouseNode = nodeGroup.append('g').attr('class', 'node').attr('transform', `translate(${spouseY},${spouseX})`).on('click', () => showDetailsPanel(spouseData)); const g = (spouseData.gender||"").toLowerCase(), s = getComputedStyle(document.documentElement); let color = s.getPropertyValue('--unk'); if(g.startsWith("m")||g==='male') color = s.getPropertyValue('--male'); if(g.startsWith("f")||g==='female') color = s.getPropertyValue('--female'); spouseNode.append('circle').attr('r', 8).attr('fill', color); const label = `${spouseData.name} (${spouseData.id})`; const tmp = spouseNode.append("text").text(label).attr("opacity",0); const bb=tmp.node().getBBox(); tmp.remove(); spouseNode.append("rect").attr("class","pill").attr("x",14).attr("y",-bb.height/2-4).attr("width",bb.width+20).attr("height",bb.height+8); spouseNode.append("text").attr("x",24).attr("y",4).text(label).attr("fill","#111827"); } }); if (kinshipPath && kinshipPath.length > 0) { const pathSet = new Set(kinshipPath); allNodes.filter(d => pathSet.has(d.data.id)).classed('kinship-path-node', true); allLinks.filter(d => pathSet.has(d.source.data.id) && pathSet.has(d.target.data.id)).classed('kinship-path-link', true); }
+      const width=1600, dx=32, dy=280; 
+	  const root=d3.hierarchy(data); 
+	  d3.tree().nodeSize([dx,dy])(root); 
+	  let x0=Infinity,x1=-x0; 
+	  root.each(d=>{ if(d.x > x1) x1=d.x; if(d.x < 0) x0=d.x; }); 
+	  svg.attr("viewBox",[-dy/2, x0-dx, width, x1-x0+dx*2].join(" ")); 
+	  const g = svg.append("g");
+	  _zoom = d3.zoom().scaleExtent([0.1, 3]).on("zoom", (event) => { g.attr("transform", event.transform); });
+      svg.call(_zoom);
+	  const linkGroup = g.append("g"); 
+	  const nodeGroup = g.append("g"); 
+	  const allLinks = linkGroup.selectAll("path").data(root.links()).join("path").attr("class","link").attr("d", d3.linkHorizontal().x(d=>d.y).y(d=>d.x)); 
+	  const allNodes = nodeGroup.selectAll("g").data(root.descendants()).join("g").attr("class","node").attr("transform", d => `translate(${d.y},${d.x})`); allNodes.on('click', (event, d) => { showDetailsPanel(d.data); }); allNodes.append("circle").attr("r", 8).attr("fill", d => { const g=(d.data.gender||"").toLowerCase(), s=getComputedStyle(document.documentElement); if(g.startsWith("m")||g==='male') return s.getPropertyValue('--male'); if(g.startsWith("f")||g==='female') return s.getPropertyValue('--female'); return s.getPropertyValue('--unk'); }); allNodes.each(function(d){ const grp=d3.select(this), label=`${d.data.name} (${d.data.pid})`; const tmp=grp.append("text").text(label).attr("opacity",0); const bb=tmp.node().getBBox(); tmp.remove(); grp.append("rect").attr("class","pill").attr("x",14).attr("y",-bb.height/2-4).attr("width",bb.width+20).attr("height",bb.height+8); grp.append("text").attr("x",24).attr("y",4).text(label).attr("fill","#111827"); }); const renderedNodes = new Map(root.descendants().map(d => [d.data.id, d])); const spouseOffset = 20; coupleEdges.forEach(edge => { const p1Id = edge.from || edge.a; const p2Id = edge.to || edge.b; let anchorNode = renderedNodes.get(p1Id), spouseId = p2Id; if (!anchorNode) { anchorNode = renderedNodes.get(p2Id); spouseId = p1Id; } if(anchorNode && !renderedNodes.has(spouseId)) { const spouseData = allNodesById.get(spouseId); if (!spouseData) return; const spouseX = anchorNode.x + spouseOffset; const spouseY = anchorNode.y; linkGroup.append('path').attr('class', 'couple-link').attr('d', `M${spouseY},${anchorNode.x} L${spouseY},${spouseX}`); const spouseNode = nodeGroup.append('g').attr('class', 'node').attr('transform', `translate(${spouseY},${spouseX})`).on('click', () => showDetailsPanel(spouseData)); const g = (spouseData.gender||"").toLowerCase(), s = getComputedStyle(document.documentElement); let color = s.getPropertyValue('--unk'); if(g.startsWith("m")||g==='male') color = s.getPropertyValue('--male'); if(g.startsWith("f")||g==='female') color = s.getPropertyValue('--female'); spouseNode.append('circle').attr('r', 8).attr('fill', color); const label = `${spouseData.name} (${spouseData.id})`; const tmp = spouseNode.append("text").text(label).attr("opacity",0); const bb=tmp.node().getBBox(); tmp.remove(); spouseNode.append("rect").attr("class","pill").attr("x",14).attr("y",-bb.height/2-4).attr("width",bb.width+20).attr("height",bb.height+8); spouseNode.append("text").attr("x",24).attr("y",4).text(label).attr("fill","#111827"); } }); if (kinshipPath && kinshipPath.length > 0) { const pathSet = new Set(kinshipPath); allNodes.filter(d => pathSet.has(d.data.id)).classed('kinship-path-node', true); allLinks.filter(d => pathSet.has(d.source.data.id) && pathSet.has(d.target.data.id)).classed('kinship-path-link', true); }
     }
     
-    setupTabs();
     document.addEventListener('DOMContentLoaded', () => {
-        updateUserInfo();
+        fetchCurrentUserId();
+        setupTabs(); // <<< CORREÇÃO: Movido para dentro do DOMContentLoaded >>>
         $("#btnRefreshSnapshots").click();
         setupAutocomplete('kinshipP1', 'kinshipP1Suggestions', 'kinshipP1_pid');
         setupAutocomplete('kinshipP2', 'kinshipP2Suggestions', 'kinshipP2_pid');
+        $('#zoom-in').addEventListener('click', () => { if (_svg && _zoom) { _svg.transition().duration(300).call(_zoom.scaleBy, 1.2); } });
+        $('#zoom-out').addEventListener('click', () => { if (_svg && _zoom) { _svg.transition().duration(300).call(_zoom.scaleBy, 0.8); } });
+        $('#zoom-reset').addEventListener('click', () => { if (_svg && _zoom) { _svg.transition().duration(500).call(_zoom.transform, d3.zoomIdentity); } });
     });
 
     $("#btnFindKinship").addEventListener("click", () => {
