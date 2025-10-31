@@ -84,7 +84,7 @@ def _get_person_with_parents(token: str, person_id: str) -> Tuple[List[str], boo
         _person_cache.set(person_id, ([], False))
         return [], False
 
-def _find_paths_bfs(start_pid: str, end_pid: str, token: str, max_depth: int = 12) -> List[List[str]]:
+def _find_paths_bfs(start_pid: str, end_pid: str, token: str, max_depth: int = 20) -> List[List[str]]:
     """
     Lógica de busca bidirecional (BFS) adaptada do pathfinder.py.
     Retorna uma lista de caminhos encontrados.
