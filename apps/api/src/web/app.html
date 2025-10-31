@@ -408,6 +408,18 @@
             } else { showToast(`Erro: ${data.error}`); hideFamilySections(); }
         } catch (e) { console.error(e); showToast('Erro de comunicação.'); hideFamilySections(); }
     }
+	
+	function resetCommunityTab() {
+        const inviteEmailInput = $('#inviteEmail');
+        const inviteLinkContainer = $('#inviteLinkContainer');
+        const memberListDiv = $('#memberList');
+        const inviteListDiv = $('#inviteList');
+
+        if (inviteEmailInput) inviteEmailInput.value = '';
+        if (inviteLinkContainer) inviteLinkContainer.style.display = 'none';
+        if (memberListDiv) memberListDiv.innerHTML = '';
+        if (inviteListDiv) inviteListDiv.innerHTML = '';
+    }
     
     function setupTabs() {
         const tabNav = $('.tab-nav');
@@ -435,6 +447,9 @@
         } else {
             $('#managementTabLink').style.display = 'none';
         }
+        
+        resetCommunityTab();
+
         loadAndRenderPosts(slug);
         loadAndRenderGallery(slug);
     }

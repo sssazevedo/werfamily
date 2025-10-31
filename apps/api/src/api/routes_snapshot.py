@@ -7,10 +7,9 @@ from collections import deque
 import requests
 from flask import Blueprint, jsonify, request, session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_
-
+from sqlalchemy import or_, and_, exists  
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from .routes_auth import login_required
-# <<< MUDANÇA: Importa o pathfinder para ser usado na clonagem >>>
 from .pathfinder_logic import find_kinship_path
 
 from ..infra.db.models import (
@@ -69,7 +68,8 @@ def _build_tree_iteratively(token: str, roots: List[str], desc_depth: int) -> Tu
         if depth < desc_depth:
             for child_id in child_ids:
                 if child_id not in processed_ids: queue.append((child_id, depth + 1))
-                edges[tuple(sorted((pid, child_id)))] = {"type": "parentChild", "from": pid, "to": child_id}
+                # The key for a parentChild relationship should NOT be sorted
+                edges[(pid, child_id)] = {"type": "parentChild", "from": pid, "to": child_id}
     return list(nodes.values()), list(edges.values())
 
 def _upsert_person(db, p_data: Dict):
@@ -89,12 +89,77 @@ def _ensure_edge(db, e_data: Dict):
         if q.first() is None: db.add(Relation(rel_type=typ, src_id=src, dst_id=dst)); db.flush()
     except IntegrityError: db.rollback()
 
+# --- Helpers de normalização / debug / UPSERT -------------------------------
+
+def _normalize_edge(e: Dict) -> Tuple[Tuple[str, str, str], Dict]:
+    """Retorna (chave, edge_normalizada) em forma canônica."""
+    etype = e["type"]
+    if etype == "couple":
+        a = e.get("a") or e.get("from")
+        b = e.get("b") or e.get("to")
+        a, b = tuple(sorted((a, b)))
+        return ("couple", a, b), {"type": "couple", "a": a, "b": b}
+    else:
+        src = e.get("from") or e.get("a")
+        dst = e.get("to")   or e.get("b")
+        return ("parentChild", src, dst), {"type": "parentChild", "from": src, "to": dst}
+
+def _debug_log_edges(descendant_edges: List[Dict], kinship_edges: List[Dict]):
+    """Imprime duplicatas em memória e de que lista vieram, se ?debug=1."""
+    if request.args.get("debug") != "1":
+        return
+    from collections import Counter
+    all_edges = []
+    for e in descendant_edges:
+        k, norm = _normalize_edge(e)
+        all_edges.append(("desc", k, norm))
+    for e in kinship_edges:
+        k, norm = _normalize_edge(e)
+        all_edges.append(("kin", k, norm))
+    counts = Counter(k for _, k, _ in all_edges)
+    dups = [ (k, c) for k, c in counts.items() if c > 1 ]
+    if dups:
+        print("### DEBUG snapshot_clone: Duplicatas em memória detectadas:")
+        for (etype, src, dst), c in dups[:200]:
+            fontes = [srcname for srcname, k, _ in all_edges if k == (etype, src, dst)]
+            print(f"   - {etype} {src}->{dst}  vezes={c}  fontes={fontes}")
+    else:
+        print("### DEBUG snapshot_clone: Sem duplicatas em memória.")
+
+def _insert_snapshot_edge_idempotent(db, snap_id: int, etype: str, src: str, dst: str):
+    """Insere com UPSERT (DO NOTHING) no SQLite; fallback com EXISTS em outros dialetos."""
+    if etype == "couple":
+        src, dst = tuple(sorted((src, dst)))
+    if str(db.bind.dialect.name) == "sqlite":
+        stmt = sqlite_insert(SnapshotEdge).values(
+            snapshot_id=snap_id, type=etype, src_id=src, dst_id=dst
+        ).on_conflict_do_nothing(
+            index_elements=["snapshot_id", "type", "src_id", "dst_id"]
+        )
+        db.execute(stmt)
+        return
+    # Fallback genérico
+    already = db.query(
+        exists().where(
+            and_(
+                SnapshotEdge.snapshot_id == snap_id,
+                SnapshotEdge.type == etype,
+                SnapshotEdge.src_id == src,
+                SnapshotEdge.dst_id == dst,
+            )
+        )
+    ).scalar()
+    if not already:
+        db.add(SnapshotEdge(snapshot_id=snap_id, type=etype, src_id=src, dst_id=dst))
+
+# ---------------------------------------------------------------------------
+
 @snapshot_bp.post("/snapshot/clone")
 @login_required
 def snapshot_clone():
     token = _auth_token()
     user_fs_id = session.get("user_fs_id")
-    # <<< MUDANÇA: Obtém o Person ID do usuário da sessão >>>
+    # <<< OBTÉM O PERSON ID DO USUÁRIO, SALVO DURANTE O LOGIN >>>
     user_person_id = session.get("user_person_id")
     
     if not all([token, user_fs_id, user_person_id]):
@@ -109,10 +174,10 @@ def snapshot_clone():
     if not roots:
         return jsonify({"ok": False, "error": "ID raiz obrigatório."}), 400
     
-    ancestor_pid = roots[0] # Usa o primeiro ID (marido) como o ancestral alvo
+    ancestor_pid = roots[0]
     
-    # <<< INÍCIO DA NOVA LÓGICA DE CLONAGEM >>>
-    
+    # --- INÍCIO DA NOVA LÓGICA DE MESCLAGEM ---
+
     # 1. Encontra a linhagem direta do usuário até o ancestral
     kinship_path = find_kinship_path(user_person_id, ancestor_pid, token) or []
 
@@ -123,8 +188,8 @@ def snapshot_clone():
     final_nodes = {node['id']: node for node in descendant_nodes}
     final_edges = {}
     for edge in descendant_edges:
-        key = tuple(sorted((edge.get('a'), edge.get('b')))) if edge['type'] == 'couple' else (edge.get('from'), edge.get('to'))
-        final_edges[key] = edge
+        key, norm_edge = _normalize_edge(edge)
+        final_edges[key] = norm_edge
 
     # 4. Busca os detalhes das pessoas na linhagem e adiciona ao conjunto final
     for pid in kinship_path:
@@ -137,31 +202,44 @@ def snapshot_clone():
                         s_details, _, _, _ = _fetch_person_with_relatives(token, spouse_id)
                         if s_details: final_nodes[spouse_id] = _format_node(s_details)
 
-    # 5. Adiciona as relações de parentesco da linhagem
+    # 5. Adiciona as relações de parentesco da linhagem, evitando duplicatas
+    kinship_edges_for_debug = []
     for i in range(len(kinship_path) - 1):
         child_id, parent_id = kinship_path[i], kinship_path[i+1]
-        key = (parent_id, child_id)
+        edge_data = {"type": "parentChild", "from": parent_id, "to": child_id}
+        key, norm_edge = _normalize_edge(edge_data)
         if key not in final_edges:
-            final_edges[key] = {"type": "parentChild", "from": parent_id, "to": child_id}
+            final_edges[key] = norm_edge
+        kinship_edges_for_debug.append(edge_data)
 
     nodes = list(final_nodes.values())
     edges = list(final_edges.values())
-
-    # <<< FIM DA NOVA LÓGICA DE CLONAGEM >>>
+    _debug_log_edges(descendant_edges, kinship_edges_for_debug)
+    
+    # --- FIM DA NOVA LÓGICA DE MESCLAGEM ---
     
     init_db(); db = SessionLocal()
     try:
         family = db.query(Family).filter_by(slug=slug).first()
+        is_admin = False
+        
         if not family:
             family = Family(slug=slug, name=slug); db.add(family); db.flush()
             membership = Membership(user_fs_id=user_fs_id, family_id=family.id, role="admin"); db.add(membership)
-        
+            is_admin = True
+        else:
+            membership = db.query(Membership).filter_by(user_fs_id=user_fs_id, family_id=family.id).first()
+            if not membership:
+                membership = Membership(user_fs_id=user_fs_id, family_id=family.id, role="member")
+                db.add(membership)
+            is_admin = membership.role == "admin"
+
         existing = db.query(Snapshot).filter_by(slug=slug).first()
         if existing: 
             db.query(SnapshotNode).filter_by(snapshot_id=existing.id).delete()
             db.query(SnapshotEdge).filter_by(snapshot_id=existing.id).delete()
             db.delete(existing)
-            db.flush() # Garante que a exclusão seja processada antes da inserção
+            db.flush()
         
         snap = Snapshot(family_id=family.id, slug=slug, root_husband_id=husband, root_wife_id=wife, desc_depth=desc_d, asc_depth=0)
         db.add(snap); db.flush()
@@ -172,25 +250,28 @@ def snapshot_clone():
         
         for e_data in edges:
             _ensure_edge(db, e_data)
-            src = e_data.get("from") or e_data.get("a")
-            dst = e_data.get("to") or e_data.get("b")
-            db.add(SnapshotEdge(snapshot_id=snap.id, type=e_data["type"], src_id=src, dst_id=dst))
-        
+            etype = e_data["type"]; src = e_data.get("from") or e_data.get("a"); dst = e_data.get("to") or e_data.get("b")
+            _insert_snapshot_edge_idempotent(db, snap.id, etype, src, dst)
+
+        if kinship_path:
+            path_record = db.query(UserPath).filter_by(user_fs_id=user_fs_id, family_id=family.id).first()
+            if not path_record:
+                path_record = UserPath(user_fs_id=user_fs_id, family_id=family.id); db.add(path_record)
+            path_record.path_json = json.dumps(kinship_path)
+            
         db.commit()
     except Exception as e: 
-        db.rollback()
-        traceback.print_exc()
+        db.rollback(); traceback.print_exc()
         return jsonify({"ok": False, "error": "Erro no banco de dados durante a clonagem.", "detail": str(e)}), 500
     finally: 
         db.close()
     
-    # <<< MUDANÇA: Inclui o kinship_path na resposta para o frontend >>>
     snapshot_json = { 
         "ok": True, 
         "slug": slug, 
         "roots": roots, 
         "elements": {"nodes": [{"data": n} for n in nodes], "edges": [{"data": e} for e in edges]}, 
-        "isAdmin": True,
+        "isAdmin": is_admin,
         "kinship_path": kinship_path 
     }
     return jsonify(snapshot_json), 200
