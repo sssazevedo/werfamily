@@ -7,12 +7,19 @@ from collections import deque, OrderedDict
 from typing import Any, Dict, List, Tuple, Optional
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import urllib3 # <<< Importa urllib3
 
 # Tenta importar a URL base da sua infraestrutura
 try:
     from ..infra.familysearch.fs_routes import FS_BASE as API_BASE_URL
 except (ModuleNotFoundError, ImportError):
     API_BASE_URL = "https://apibeta.familysearch.org"
+    
+try:
+    requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS = 'ALL:@SECLEVEL=1'
+except AttributeError:
+    pass
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Configuração de HTTP e Cache (adaptado do pathfinder.py) ---
 
@@ -64,7 +71,7 @@ def _get_person_with_parents(token: str, person_id: str) -> Tuple[List[str], boo
 
     url = f"{API_BASE_URL}/platform/tree/persons/{person_id}"
     try:
-        r = session_http.get(url, headers=_get_headers(token), timeout=DEFAULT_TIMEOUT)
+        r = session_http.get(url, headers=_get_headers(token), timeout=DEFAULT_TIMEOUT, verify=False)
         if r.status_code != 200:
             _person_cache.set(person_id, ([], False))
             return [], False

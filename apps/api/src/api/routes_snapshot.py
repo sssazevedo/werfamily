@@ -61,15 +61,16 @@ def _build_tree_iteratively(token: str, roots: List[str], desc_depth: int) -> Tu
         if not details: continue
         nodes[pid] = _format_node(details)
         for spouse_id in spouse_ids:
-            edges[tuple(sorted((pid, spouse_id)))] = {"type": "couple", "a": pid, "b": spouse_id}
+            # <<< CORREÇÃO AQUI: Chave de aresta consistente >>>
+            edges[("couple", *tuple(sorted((pid, spouse_id))))] = {"type": "couple", "a": pid, "b": spouse_id}
             if spouse_id not in nodes:
                 s_details, _, _, _ = _fetch_person_with_relatives(token, spouse_id)
                 if s_details: nodes[spouse_id] = _format_node(s_details)
         if depth < desc_depth:
             for child_id in child_ids:
                 if child_id not in processed_ids: queue.append((child_id, depth + 1))
-                # The key for a parentChild relationship should NOT be sorted
-                edges[(pid, child_id)] = {"type": "parentChild", "from": pid, "to": child_id}
+                # <<< CORREÇÃO AQUI: Chave de aresta consistente >>>
+                edges[("parentChild", pid, child_id)] = {"type": "parentChild", "from": pid, "to": child_id}
     return list(nodes.values()), list(edges.values())
 
 def _upsert_person(db, p_data: Dict):
@@ -157,41 +158,34 @@ def _insert_snapshot_edge_idempotent(db, snap_id: int, etype: str, src: str, dst
 @snapshot_bp.post("/snapshot/clone")
 @login_required
 def snapshot_clone():
-    token = _auth_token()
-    user_fs_id = session.get("user_fs_id")
-    # <<< OBTÉM O PERSON ID DO USUÁRIO, SALVO DURANTE O LOGIN >>>
-    user_person_id = session.get("user_person_id")
+    token = _auth_token(); user_fs_id = session.get("user_fs_id"); user_person_id = session.get("user_person_id")
+    if not all([token, user_fs_id, user_person_id]): return jsonify({"ok": False, "error": "Sessão inválida ou incompleta."}), 401
     
-    if not all([token, user_fs_id, user_person_id]):
-        return jsonify({"ok": False, "error": "Sessão inválida ou incompleta."}), 401
-    
-    body = request.get_json(silent=True) or {}
-    husband, wife = (body.get("husband") or "").strip(), (body.get("wife") or "").strip()
-    desc_d = int(body.get("desc_depth") or 0)
-    slug = (body.get("slug") or "default").strip()
+    body = request.get_json(silent=True) or {}; husband, wife = (body.get("husband") or "").strip(), (body.get("wife") or "").strip()
+    desc_d = int(body.get("desc_depth") or 0); slug = (body.get("slug") or "default").strip()
     
     roots = [pid for pid in [husband, wife] if pid]
-    if not roots:
-        return jsonify({"ok": False, "error": "ID raiz obrigatório."}), 400
+    if not roots: return jsonify({"ok": False, "error": "ID raiz obrigatório."}), 400
     
     ancestor_pid = roots[0]
     
-    # --- INÍCIO DA NOVA LÓGICA DE MESCLAGEM ---
-
-    # 1. Encontra a linhagem direta do usuário até o ancestral
     kinship_path = find_kinship_path(user_person_id, ancestor_pid, token) or []
-
-    # 2. Busca a árvore de descendentes do ancestral (como antes)
-    descendant_nodes, descendant_edges = _build_tree_iteratively(token, roots, desc_d)
+    descendant_nodes, descendant_edges_list = _build_tree_iteratively(token, roots, desc_d)
     
-    # 3. Mescla os dados, evitando duplicatas
     final_nodes = {node['id']: node for node in descendant_nodes}
+    
+    # <<< CORREÇÃO AQUI: Lógica de criação de chave consistente >>>
     final_edges = {}
-    for edge in descendant_edges:
-        key, norm_edge = _normalize_edge(edge)
-        final_edges[key] = norm_edge
+    for edge in descendant_edges_list:
+        if edge['type'] == 'couple':
+            a, b = edge.get('a'), edge.get('b');
+            a, b = tuple(sorted((a, b)))
+            key = ('couple', a, b)
+        else: # parentChild
+            parent_id = edge.get('from'); child_id  = edge.get('to')
+            key = ('parentChild', parent_id, child_id)
+        final_edges[key] = edge # Usa a chave normalizada
 
-    # 4. Busca os detalhes das pessoas na linhagem e adiciona ao conjunto final
     for pid in kinship_path:
         if pid not in final_nodes:
             details, _, spouse_ids, _ = _fetch_person_with_relatives(token, pid)
@@ -202,21 +196,21 @@ def snapshot_clone():
                         s_details, _, _, _ = _fetch_person_with_relatives(token, spouse_id)
                         if s_details: final_nodes[spouse_id] = _format_node(s_details)
 
-    # 5. Adiciona as relações de parentesco da linhagem, evitando duplicatas
     kinship_edges_for_debug = []
     for i in range(len(kinship_path) - 1):
         child_id, parent_id = kinship_path[i], kinship_path[i+1]
-        edge_data = {"type": "parentChild", "from": parent_id, "to": child_id}
-        key, norm_edge = _normalize_edge(edge_data)
+        key = ('parentChild', parent_id, child_id)
         if key not in final_edges:
-            final_edges[key] = norm_edge
-        kinship_edges_for_debug.append(edge_data)
+            e = {"type": "parentChild", "from": parent_id, "to": child_id}
+            final_edges[key] = e
+            kinship_edges_for_debug.append(e)
+        else:
+            kinship_edges_for_debug.append({"type": "parentChild", "from": parent_id, "to": child_id})
 
     nodes = list(final_nodes.values())
     edges = list(final_edges.values())
-    _debug_log_edges(descendant_edges, kinship_edges_for_debug)
-    
-    # --- FIM DA NOVA LÓGICA DE MESCLAGEM ---
+
+    _debug_log_edges(descendant_edges_list, kinship_edges_for_debug)
     
     init_db(); db = SessionLocal()
     try:
@@ -248,6 +242,7 @@ def snapshot_clone():
             _upsert_person(db, p_data)
             db.add(SnapshotNode(snapshot_id=snap.id, person_id=p_data["id"]))
         
+        # A lista de 'edges' agora é garantidamente única, então não precisamos de 'normalized_edges'
         for e_data in edges:
             _ensure_edge(db, e_data)
             etype = e_data["type"]; src = e_data.get("from") or e_data.get("a"); dst = e_data.get("to") or e_data.get("b")
@@ -267,12 +262,9 @@ def snapshot_clone():
         db.close()
     
     snapshot_json = { 
-        "ok": True, 
-        "slug": slug, 
-        "roots": roots, 
+        "ok": True, "slug": slug, "roots": roots, 
         "elements": {"nodes": [{"data": n} for n in nodes], "edges": [{"data": e} for e in edges]}, 
-        "isAdmin": is_admin,
-        "kinship_path": kinship_path 
+        "isAdmin": is_admin, "kinship_path": kinship_path 
     }
     return jsonify(snapshot_json), 200
 
