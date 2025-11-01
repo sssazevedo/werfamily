@@ -9,6 +9,8 @@ from flask import Blueprint, request, session, redirect, jsonify
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import urllib3 # <<< MUDANÇA: Importa urllib3 para ajustes de segurança
+import requests
+import urllib3
 
 # <<< INÍCIO DA CORREÇÃO DE SSL/TLS PARA WINDOWS >>>
 # Este bloco força o uso de um conjunto de cifras mais moderno e compatível,

@@ -135,9 +135,113 @@ def callback():
             # <<< MUDANÇA: Salva o Person ID do usuário na sessão >>>
             session["user_person_id"] = person_id
 
+            # <<< INÍCIO DA CORREÇÃO: Lógica de convite >>>
             if invite_token:
-                # ... (sua lógica de convite) ...
-                pass
+                print(f"--- [DEBUG auth.py] Processando token de convite: {invite_token}")
+                # 1. Encontra o convite
+                invite = db.query(Invite).filter(
+                    Invite.token == invite_token,
+                    Invite.expires_at > datetime.utcnow()
+                ).first()
+                
+                if invite:
+                    print(f"--- [DEBUG auth.py] Convite válido encontrado para a família ID: {invite.family_id}")
+                    # 2. Verifica se o usuário já é membro
+                    membership = db.query(Membership).filter_by(
+                        user_fs_id=fs_id, 
+                        family_id=invite.family_id
+                    ).first()
+                    
+                    if not membership:
+                        # 3. Adiciona o novo usuário (a prima) como membro da família
+                        new_membership = Membership(
+                            user_fs_id=fs_id, 
+                            family_id=invite.family_id, 
+                            role="member" # Papel padrão para convidados
+                        )
+                        db.add(new_membership)
+                        print(f"--- [DEBUG auth.py] Usuário {fs_id} adicionado à família {invite.family_id} como 'member'")
+                    else:
+                        print(f"--- [DEBUG auth.py] Usuário {fs_id} já era membro da família {invite.family_id}.")
+
+                    # <<< INÍCIO DO BLOCO DE DEBUG (V3) - COMPLETO E CORRIGIDO >>>
+                    # 4. (Opcional, mas recomendado) Tenta salvar a linhagem da prima
+                    try:
+                        print(f"\n--- [DEBUG auth.py] Iniciando busca de linhagem para user_fs_id={fs_id} (person_id={person_id})")
+                        
+                        root_snapshot = db.query(Snapshot).filter_by(family_id=invite.family_id).order_by(Snapshot.created_at.asc()).first()
+                        
+                        if not root_snapshot or not (root_snapshot.root_husband_id or root_snapshot.root_wife_id):
+                             print(f"--- [DEBUG auth.py] FALHA: Snapshot raiz ou ID raiz não encontrado para family_id={invite.family_id}")
+                        
+                        else:
+                            ancestor_pid = root_snapshot.root_husband_id or root_snapshot.root_wife_id
+                            print(f"--- [DEBUG auth.py] Ancestral raiz encontrado: {ancestor_pid} (do snapshot slug: {root_snapshot.slug})")
+                            
+                            print(f"--- [DEBUG auth.py] BUSCANDO CAMINHO de {person_id} (prima) para {ancestor_pid} (ancestral)...")
+                            
+                            # 1. BUSCA O CAMINHO NO FAMILYSEARCH
+                            kinship_path = find_kinship_path(person_id, ancestor_pid, access_token)
+                            
+                            if kinship_path:
+                                print(f"--- [DEBUG auth.VITORIA] Caminho encontrado via API: {kinship_path}")
+
+                                # --- INÍCIO DA CORREÇÃO (Adicionada na última etapa) ---
+                                # Garante que as pessoas e arestas do caminho existam no DB
+                                print(f"--- [DEBUG auth.VITORIA] Garantindo que pessoas e arestas do caminho existam no DB...")
+                                for i in range(len(kinship_path)):
+                                    pid = kinship_path[i]
+                                    
+                                    # 1. Salva a pessoa
+                                    details, _, spouse_ids, _ = _fetch_person_with_relatives(access_token, pid)
+                                    if details:
+                                        _upsert_person(db, _format_node(details))
+                                        
+                                        # 1b. Salva os cônjuges
+                                        for spouse_id in spouse_ids:
+                                            s_details, _, _, _ = _fetch_person_with_relatives(access_token, spouse_id)
+                                            if s_details:
+                                                _upsert_person(db, _format_node(s_details))
+                                                _ensure_edge(db, {"type": "couple", "a": pid, "b": spouse_id})
+
+                                    # 2. Salva a aresta pai-filho
+                                    if i < len(kinship_path) - 1:
+                                        child_id = kinship_path[i]
+                                        parent_id = kinship_path[i+1]
+                                        edge_data = {"type": "parentChild", "from": parent_id, "to": child_id}
+                                        _ensure_edge(db, edge_data)
+                                print(f"--- [DEBUG auth.VITORIA] Pessoas e arestas do caminho salvas.")
+                                # --- FIM DA CORREÇÃO ---
+
+                                # 2. PROCURA UM REGISTRO ANTIGO
+                                path_record = db.query(UserPath).filter_by(user_fs_id=fs_id, family_id=invite.family_id).first()
+                                
+                                if not path_record:
+                                    # 3a. CRIA UM NOVO REGISTRO
+                                    print(f"--- [DEBUG auth.VITORIA] Criando novo registro UserPath...")
+                                    path_record = UserPath(user_fs_id=fs_id, family_id=invite.family_id)
+                                    db.add(path_record)
+                                else:
+                                    print(f"--- [DEBUG auth.VITORIA] Atualizando registro UserPath existente...")
+
+                                # 4. ATUALIZA O CAMINHO (NOVO OU ANTIGO)
+                                path_record.path_json = json.dumps(kinship_path)
+                                print(f"--- [DEBUG auth.VITORIA] Linhagem salva para {fs_id}.")
+
+                            else:
+                                # <<< O CÓDIGO QUE VOCÊ PERDEU ESTÁ AQUI >>>
+                                print(f"--- [DEBUG auth.FALHA] find_kinship_path retornou None. Nenhum caminho encontrado entre {person_id} e {ancestor_pid}.")
+
+                    except Exception as e:
+                        print(f"--- !!! ERRO GRAVE ao tentar salvar a linhagem do convidado: {e} !!!")
+                        traceback.print_exc()
+                    # <<< FIM DO BLOCO DE DEBUG (V3) >>>
+
+                    # 5. Finalmente, commita as mudanças
+                    db.commit()
+                else:
+                    print(f"--- [DEBUG auth.py] Token de convite inválido ou expirado: {invite_token}")
+            # <<< FIM DA CORREÇÃO >>>
 
     except requests.RequestException as e: 
         print(f"AVISO: Falha ao buscar dados do utilizador: {e}")

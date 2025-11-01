@@ -60,6 +60,8 @@ def _get_headers(token: str) -> Dict[str, str]:
         "User-Agent": "WeRfamily-Pathfinder/1.0",
     }
 
+# apps/api/src/api/pathfinder_logic.py
+
 def _get_person_with_parents(token: str, person_id: str) -> Tuple[List[str], bool]:
     """
     Versão simplificada que busca apenas os pais de uma pessoa.
@@ -73,7 +75,7 @@ def _get_person_with_parents(token: str, person_id: str) -> Tuple[List[str], boo
     try:
         r = session_http.get(url, headers=_get_headers(token), timeout=DEFAULT_TIMEOUT, verify=False)
         if r.status_code != 200:
-            _person_cache.set(person_id, ([], False))
+            # <<< LINHA REMOVIDA >>> _person_cache.set(person_id, ([], False))
             return [], False
         
         data = r.json()
@@ -85,10 +87,10 @@ def _get_person_with_parents(token: str, person_id: str) -> Tuple[List[str], boo
                 if p2 := (rel.get("parent2") or {}).get("resourceId"): parents.add(p2)
         
         result = (list(parents), True)
-        _person_cache.set(person_id, result)
+        _person_cache.set(person_id, result) # <- Salva APENAS o sucesso
         return result
     except requests.RequestException:
-        _person_cache.set(person_id, ([], False))
+        # <<< LINHA REMOVIDA >>> _person_cache.set(person_id, ([], False))
         return [], False
 
 def _find_paths_bfs(start_pid: str, end_pid: str, token: str, max_depth: int = 20) -> List[List[str]]:
