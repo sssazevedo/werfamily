@@ -43,11 +43,11 @@ class Family(Base):
     slug = Column(String(64), nullable=False, unique=True)
     name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    snapshots = relationship("Snapshot", back_populates="family")
+    # <<< MUDANÇA: Adicionada exclusão em cascata para snapshots >>>
+    snapshots = relationship("Snapshot", back_populates="family", cascade="all, delete-orphan")
     memberships = relationship("Membership", back_populates="family")
     invites = relationship("Invite", back_populates="family")
     user_paths = relationship("UserPath", back_populates="family")
-    # --- Adicionado para aceder a posts e media de uma família ---
     posts = relationship("Post", back_populates="family", cascade="all, delete-orphan")
     media = relationship("Media", back_populates="family", cascade="all, delete-orphan")
 
@@ -90,6 +90,10 @@ class Snapshot(Base):
     asc_depth = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     family = relationship("Family", back_populates="snapshots")
+    # <<< INÍCIO DA CORREÇÃO: Adiciona os relacionamentos com cascata >>>
+    nodes = relationship("SnapshotNode", back_populates="snapshot", cascade="all, delete-orphan")
+    edges = relationship("SnapshotEdge", back_populates="snapshot", cascade="all, delete-orphan")
+    # <<< FIM DA CORREÇÃO >>>
 
 class SnapshotNode(Base):
     __tablename__ = "snapshot_nodes"
@@ -97,6 +101,9 @@ class SnapshotNode(Base):
     snapshot_id = Column(Integer, ForeignKey("snapshots.id"), nullable=False)
     person_id = Column(String(32), ForeignKey("persons.id"), nullable=False)
     __table_args__ = (UniqueConstraint("snapshot_id", "person_id", name="uix_snapshot_node"),)
+    # <<< INÍCIO DA CORREÇÃO: Adiciona o relacionamento de volta (back_populates) >>>
+    snapshot = relationship("Snapshot", back_populates="nodes")
+    # <<< FIM DA CORREÇÃO >>>
 
 class SnapshotEdge(Base):
     __tablename__ = "snapshot_edges"
@@ -106,6 +113,9 @@ class SnapshotEdge(Base):
     src_id = Column(String(32), ForeignKey("persons.id"), nullable=False)
     dst_id = Column(String(32), ForeignKey("persons.id"), nullable=False)
     __table_args__ = (UniqueConstraint("snapshot_id", "type", "src_id", "dst_id"),)
+    # <<< INÍCIO DA CORREÇÃO: Adiciona o relacionamento de volta (back_populates) >>>
+    snapshot = relationship("Snapshot", back_populates="edges")
+    # <<< FIM DA CORREÇÃO >>>
 
 class Invite(Base):
     __tablename__ = "invites"
@@ -126,8 +136,6 @@ class UserPath(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User", back_populates="paths")
     family = relationship("Family", back_populates="user_paths")
-
-# --- NOVAS TABELAS PARA MURAL E GALERIA ---
 
 class Post(Base):
     """Representa um post no mural de uma família."""
@@ -162,18 +170,16 @@ class Media(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     family_id = Column(Integer, ForeignKey("families.id"), nullable=False)
     user_fs_id = Column(String(32), ForeignKey("users.fs_id"), nullable=False)
-    # A ligação ao post é opcional, permitindo que a media exista apenas na galeria
     post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
     
-    file_path = Column(String(512), nullable=False) # Caminho para o ficheiro no servidor
-    caption = Column(String(512), nullable=True) # Legenda da foto
-    media_type = Column(String(32), default="image") # Ex: 'image', 'video'
+    file_path = Column(String(512), nullable=False)
+    caption = Column(String(512), nullable=True)
+    media_type = Column(String(32), default="image")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     family = relationship("Family", back_populates="media")
     uploader = relationship("User", back_populates="media_uploads")
     post = relationship("Post", back_populates="media")
-
 
 def init_db() -> None:
     """Cria todas as tabelas no banco de dados se elas não existirem."""
