@@ -14,8 +14,9 @@ from ..infra.db.models import SessionLocal, Family, Membership, Media, User
 
 gallery_bp = Blueprint("gallery_bp", __name__)
 
-UPLOAD_FOLDER = Path(__file__).resolve().parent.parent / 'uploads'
+UPLOAD_FOLDER = Path(__file__).resolve().parent.parent.parent / 'uploads'
 UPLOAD_FOLDER.mkdir(exist_ok=True)
+...
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 def _allowed_file(filename):
