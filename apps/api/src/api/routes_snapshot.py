@@ -54,6 +54,8 @@ def _format_node(details: Dict) -> Dict:
 
 def _build_tree_iteratively(token: str, roots: List[str], desc_depth: int) -> Tuple[List[Dict], List[Dict]]:
     nodes, edges = {}, {}; processed_ids = set(); queue = deque([(pid, 0) for pid in roots])
+    # Conjunto para rastrear filhos para os quais *devemos* buscar detalhes
+    children_to_fetch_details = set()
     while queue:
         pid, depth = queue.popleft()
         if pid in processed_ids: continue
@@ -71,6 +73,18 @@ def _build_tree_iteratively(token: str, roots: List[str], desc_depth: int) -> Tu
                 if child_id not in processed_ids: queue.append((child_id, depth + 1))
                 # <<< CORREÇÃO AQUI: Chave de aresta consistente >>>
                 edges[("parentChild", pid, child_id)] = {"type": "parentChild", "from": pid, "to": child_id}
+        elif child_ids:
+            # Se estiver NO LIMITE da profundidade, não expande mais,
+            # mas *ainda* cria as arestas e marca os filhos para buscar seus dados.
+            for child_id in child_ids:
+                edges[("parentChild", pid, child_id)] = {"type": "parentChild", "from": pid, "to": child_id}
+                if child_id not in processed_ids:
+                    children_to_fetch_details.add(child_id)
+    for child_id in children_to_fetch_details:
+        if child_id not in nodes: # Garante que não buscamos quem já temos
+            c_details, _, _, _ = _fetch_person_with_relatives(token, child_id)
+            if c_details:
+                nodes[child_id] = _format_node(c_details)
     return list(nodes.values()), list(edges.values())
 
 def _upsert_person(db, p_data: Dict):
