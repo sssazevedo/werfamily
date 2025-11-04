@@ -622,12 +622,76 @@
                 if (res.data.members.length > 0) { const table = `<table class="table table-sm"><tr><th>Nome</th><th>Papel</th></tr>${res.data.members.map(m => `<tr><td>${m.name}</td><td>${m.role}</td></tr>`).join('')}</table>`; memberListDiv.innerHTML = table; } 
                 else { memberListDiv.textContent = 'Nenhum membro encontrado.'; }
                 inviteListDiv.innerHTML = '';
-                if (res.data.pending_invites.length > 0) { const table = `<table class="table table-sm"><tr><th>Convidado (Email)</th><th>Gerado em</th></tr>${res.data.pending_invites.map(i => `<tr><td>${i.email || 'Link genérico'}</td><td>${new Date(i.created_at).toLocaleDateString()}</td></tr>`).join('')}</table>`; inviteListDiv.innerHTML = table; }
+                if (res.data.pending_invites.length > 0) { 
+                    // <<< INÍCIO DA MODIFICAÇÃO >>>
+                    const table = `<table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Convidado (Email)</th>
+                                <th>Gerado em</th>
+                                <th>Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        ${res.data.pending_invites.map(i => `
+                        <tr id="invite-row-${i.id}">
+                            <td>${i.email || 'Link genérico'}</td>
+                            <td>${new Date(i.created_at).toLocaleDateString()}</td>
+                            <td>
+                                <button class="btn btn-outline-danger btn-sm" 
+                                        data-action="delete-invite" 
+                                        data-invite-id="${i.id}"
+                                        title="Excluir convite">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>`).join('')}
+                        </tbody>
+                    </table>`; 
+                    inviteListDiv.innerHTML = table;
+                    // <<< FIM DA MODIFICAÇÃO >>>
+                }
                 else { inviteListDiv.textContent = 'Nenhum convite pendente.'; }
             } else { throw new Error(res.error || 'Erro desconhecido.'); }
         } catch (e) { console.error(e); showToast(e.message); memberListDiv.innerHTML = 'Erro ao carregar membros.'; inviteListDiv.innerHTML = 'Erro ao carregar convites.'; }
     }
-    
+    $("#managementSection").addEventListener('click', async (e) => {
+        const target = e.target.closest('[data-action="delete-invite"]');
+        if (!target) return;
+        
+        const inviteId = target.dataset.inviteId;
+        if (!inviteId) return;
+
+        if (confirm("Tem certeza que deseja excluir este convite pendente?")) {
+            target.disabled = true;
+            try {
+                const r = await fetch(`/invite/${inviteId}`, { 
+                    method: 'DELETE', 
+                    credentials: 'include' 
+                });
+                
+                const res = await r.json();
+                
+                if (r.ok) {
+                    showToast(res.message || "Convite excluído com sucesso.");
+                    const row = $(`#invite-row-${inviteId}`);
+                    if (row) {
+                        // Efeito de fade-out
+                        row.style.transition = 'opacity 0.5s';
+                        row.style.opacity = '0';
+                        setTimeout(() => row.remove(), 500);
+                    }
+                } else {
+                    showToast(`Erro: ${res.error || 'Não foi possível excluir.'}`);
+                    target.disabled = false;
+                }
+            } catch (err) {
+                console.error("Erro ao excluir convite:", err);
+                showToast("Erro de comunicação ao tentar excluir.");
+                target.disabled = false;
+            }
+        }
+    });
     function setupAutocomplete(inputId, suggestionsId, hiddenInputId) {
         const input = $(`#${inputId}`);
         const suggestions = $(`#${suggestionsId}`);

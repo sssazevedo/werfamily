@@ -54,6 +54,7 @@ def get_management_data(slug: str):
         invites_data = []
         for i in pending_invites:
             invites_data.append({
+                "id": i.id,  # <<< ADICIONE ESTA LINHA
                 "token": i.token,
                 "email": i.email,
                 "created_at": i.created_at.isoformat()
