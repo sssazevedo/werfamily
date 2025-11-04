@@ -268,11 +268,20 @@ def snapshot_clone():
     }
     return jsonify(snapshot_json), 200
 
+
 @snapshot_bp.get("/snapshot/<slug>")
 @login_required
 def snapshot_get(slug: str):
     user_fs_id = session.get("user_fs_id");
     if not user_fs_id: return jsonify({"ok": False, "error": "not_authenticated"}), 401
+    
+    # <<< INÍCIO DA CORREÇÃO (HOTFIX) >>>
+    # Precisamos de um token para o caso de precisarmos buscar pessoas órfãs
+    token = _auth_token() 
+    if not token:
+         return jsonify({"ok": False, "error": "not_authenticated"}), 401
+    # <<< FIM DA CORREÇÃO (HOTFIX) >>>
+
     db = SessionLocal()
     try:
         membership = db.query(Membership).join(Family).join(Snapshot).filter(
@@ -289,39 +298,67 @@ def snapshot_get(slug: str):
         path_record = db.query(UserPath).filter_by(user_fs_id=user_fs_id, family_id=snap.family_id).first()
         if path_record and path_record.path_json: kinship_path = json.loads(path_record.path_json)
         
+        # --- LÓGICA DE COLETA DE ID (EXISTENTE) ---
         snapshot_person_ids = {n.person_id for n in db.query(SnapshotNode.person_id).filter_by(snapshot_id=snap.id)}
-        
         global_relations = db.query(Relation).filter(
             or_(Relation.src_id.in_(snapshot_person_ids), Relation.dst_id.in_(snapshot_person_ids))
         ).all()
-        
-        path_person_ids = set(kinship_path)
         extra_relation_ids = {r.src_id for r in global_relations}.union({r.dst_id for r in global_relations})
-        all_person_ids = snapshot_person_ids.union(path_person_ids).union(extra_relation_ids)
-
-        all_persons = db.query(Person).filter(Person.id.in_(all_person_ids)).all()
-        nodes = [{"id": p.id, "name": p.name, "gender": p.gender, "birth": {"date": p.birth, "place": p.birth_place}, "death": {"date": p.death, "place": p.death_place}} for p in all_persons]
-        
         snapshot_edges_db = db.query(SnapshotEdge).filter_by(snapshot_id=snap.id).all()
+        extra_edge_ids = {e.src_id for e in snapshot_edges_db}.union({e.dst_id for e in snapshot_edges_db})
+        path_person_ids = set(kinship_path)
+        all_person_ids = snapshot_person_ids.union(path_person_ids).union(extra_relation_ids).union(extra_edge_ids)
+        
+        # --- BUSCA NO BANCO DE DADOS (EXISTENTE) ---
+        all_persons_db = db.query(Person).filter(Person.id.in_(all_person_ids)).all()
+        
+        # <<< INÍCIO DA CORREÇÃO (HOTFIX) >>>
+        # Verifica se algum ID da árvore não foi encontrado no nosso DB (Pessoas órfãs)
+        found_ids = {p.id for p in all_persons_db}
+        missing_ids = all_person_ids - found_ids
+        
+        newly_fetched_persons = []
+        if missing_ids:
+            print(f"--- [snapshot_get] Corrigindo {len(missing_ids)} IDs órfãos (ex: {list(missing_ids)[0]}) ---")
+            for pid in missing_ids:
+                if not pid: continue
+                # Busca o nó faltante no FamilySearch
+                details, _, _, _ = _fetch_person_with_relatives(token, pid)
+                if details:
+                    node_data = _format_node(details)
+                    # Salva no DB para a próxima vez
+                    _upsert_person(db, node_data)
+                    newly_fetched_persons.append(node_data)
+            db.commit()
+        # <<< FIM DA CORREÇÃO (HOTFIX) >>>
+        
+        # Formata os nós para o frontend
+        nodes_db = [{"id": p.id, "name": p.name, "gender": p.gender, "birth": {"date": p.birth, "place": p.birth_place}, "death": {"date": p.death, "place": p.death_place}} for p in all_persons_db]
+        nodes_fetched = [{"id": p["id"], "name": p["name"], "gender": p["gender"], "birth": p["birth"], "death": p["death"]} for p in newly_fetched_persons]
+        nodes = nodes_db + nodes_fetched
+        
+        # Constrói o mapa de arestas (lógica inalterada)
         edges_map = {}
         for e in snapshot_edges_db:
-            key = (e.type, e.src_id, e.dst_id)
-            edges_map[key] = {"type": e.type, "from": e.src_id, "to": e.dst_id, "a": e.src_id, "b": e.dst_id}
+            key = (e.type, e.src_id, e.dst_id); edges_map[key] = {"type": e.type, "from": e.src_id, "to": e.dst_id, "a": e.src_id, "b": e.dst_id}
         for r in global_relations:
              key = (r.rel_type, r.src_id, r.dst_id)
-             if key not in edges_map:
-                edges_map[key] = {"type": r.rel_type, "from": r.src_id, "to": r.dst_id, "a": r.src_id, "b": r.dst_id}
+             if key not in edges_map: edges_map[key] = {"type": r.rel_type, "from": r.src_id, "to": r.dst_id, "a": r.src_id, "b": r.dst_id}
         edges = list(edges_map.values())
 
         snapshot_json = { 
-            "ok": True, 
-            "slug": snap.slug, 
+            "ok": True, "slug": snap.slug, 
             "roots": [pid for pid in [snap.root_husband_id, snap.root_wife_id] if pid], 
             "elements": {"nodes": [{"data": n} for n in nodes], "edges": [{"data": e} for e in edges]}, 
             "kinship_path": kinship_path,
             "isAdmin": is_admin
         }
         return jsonify(snapshot_json)
+    except Exception as e:
+        db.rollback()
+        print(f"!!! ERRO em snapshot_get: {e} !!!")
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "Erro interno do servidor ao carregar snapshot."}), 500
     finally:
         db.close()
 
@@ -384,5 +421,107 @@ def delete_snapshot(slug: str):
         print(f"!!! ERRO ao deletar snapshot {slug}: {e} !!!")
         traceback.print_exc()
         return jsonify({"ok": False, "error": "Erro interno do servidor ao tentar excluir o snapshot."}), 500
+    finally:
+        db.close()
+        
+# Em apps/api/src/api/routes_snapshot.py
+
+@snapshot_bp.route("/snapshot/<string:slug>/person/<string:pid>/expand")
+@login_required
+def snapshot_expand_person(slug: str, pid: str):
+    """
+    Busca parentes (pais, filhos, cônjuges) de uma pessoa no FamilySearch
+    e retorna aqueles que ainda não estão neste snapshot.
+    """
+    token = _auth_token()
+    user_fs_id = session.get("user_fs_id")
+    if not token or not user_fs_id:
+        return jsonify({"ok": False, "error": "not_authenticated"}), 401
+
+    db = SessionLocal()
+    try:
+        # 1. Verifica se o usuário é membro desta família/snapshot
+        membership = db.query(Membership).join(Family).join(Snapshot).filter(
+            Snapshot.slug == slug,
+            Membership.user_fs_id == user_fs_id
+        ).first()
+
+        if not membership:
+            return jsonify({"ok": False, "error": "not_found_or_forbidden"}), 404
+        
+        snap = membership.family.snapshots[0] # Pega o snapshot associado
+
+        # 2. Busca os parentes no FamilySearch
+        details, parent_ids, spouse_ids, child_ids = _fetch_person_with_relatives(token, pid)
+        if not details:
+            return jsonify({"ok": False, "error": "person_not_found_in_fs"}), 404
+
+        all_relative_ids = set(parent_ids) | set(spouse_ids) | set(child_ids)
+
+        # 3. Descobre quais pessoas JÁ ESTÃO no snapshot
+        existing_person_ids = {
+            node.person_id for node in 
+            db.query(SnapshotNode.person_id).filter(
+                SnapshotNode.snapshot_id == snap.id,
+                SnapshotNode.person_id.in_(all_relative_ids)
+            )
+        }
+        
+        # 4. Filtra para encontrar apenas os parentes NOVOS
+        new_relative_ids = all_relative_ids - existing_person_ids
+
+        new_nodes = []
+        new_edges = []
+        
+        # 5. Busca os detalhes das pessoas NOVAS
+        for rel_id in new_relative_ids:
+            rel_details, _, _, _ = _fetch_person_with_relatives(token, rel_id)
+            if rel_details:
+                # Adiciona o novo nó
+                new_node_data = _format_node(rel_details)
+                new_nodes.append(new_node_data)
+                
+                # Salva a nova pessoa e o nó no snapshot (para o futuro)
+                _upsert_person(db, new_node_data)
+                db.add(SnapshotNode(snapshot_id=snap.id, person_id=rel_id))
+
+        # 6. Cria as NOVAS arestas (ligações)
+        for parent_id in parent_ids:
+            if parent_id in new_relative_ids or parent_id in existing_person_ids:
+                e = {"type": "parentChild", "from": parent_id, "to": pid}
+                new_edges.append(e); _ensure_edge(db, e)
+                # <<< CORREÇÃO: Usa a função idempotente >>>
+                _insert_snapshot_edge_idempotent(db, snap.id, e["type"], e["from"], e["to"])
+
+        for child_id in child_ids:
+             if child_id in new_relative_ids or child_id in existing_person_ids:
+                e = {"type": "parentChild", "from": pid, "to": child_id}
+                new_edges.append(e); _ensure_edge(db, e)
+                # <<< CORREÇÃO: Usa a função idempotente >>>
+                _insert_snapshot_edge_idempotent(db, snap.id, e["type"], e["from"], e["to"])
+
+        for spouse_id in spouse_ids:
+             if spouse_id in new_relative_ids or spouse_id in existing_person_ids:
+                e = {"type": "couple", "a": pid, "b": spouse_id}
+                new_edges.append(e); _ensure_edge(db, e)
+                # <<< CORREÇÃO: Usa a função idempotente >>>
+                _insert_snapshot_edge_idempotent(db, snap.id, e["type"], e["a"], e["b"])
+
+        db.commit()
+
+        # 7. Formata para o frontend (padrão cytoscape)
+        return jsonify({
+            "ok": True, 
+            "new_elements": {
+                "nodes": [{"data": n} for n in new_nodes],
+                "edges": [{"data": e} for e in new_edges]
+            }
+        })
+
+    except Exception as e:
+        db.rollback()
+        print(f"!!! ERRO ao expandir pessoa: {e} !!!")
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "Erro interno do servidor."}), 500
     finally:
         db.close()

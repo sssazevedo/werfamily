@@ -847,7 +847,111 @@
     $("#closePanelBtn").addEventListener("click", () => { $("#detailsPanel").classList.remove("open"); });
     
     function showDetailsPanel(nodeData) {
-        const contentDiv = $("#panelContent"); const birthInfo = (nodeData.birth && (nodeData.birth.date || nodeData.birth.place)) ? `${nodeData.birth.date || '...'} em ${nodeData.birth.place || '...'}` : '<i>indisponível</i>'; const deathInfo = (nodeData.death && (nodeData.death.date || nodeData.death.place)) ? `${nodeData.death.date || '...'} em ${nodeData.death.place || '...'}` : '<i>indisponível</i>'; contentDiv.innerHTML = `<h3>${nodeData.name || '...'}</h3><div class="detail-item"><span class="detail-label">ID</span><span class="detail-value">${nodeData.pid || nodeData.id}</span></div><div class="detail-item"><span class="detail-label">Género</span><span class="detail-value">${nodeData.gender || '...'}</span></div><div class="detail-item"><span class="detail-label">Nascimento</span><span class="detail-value">${birthInfo}</span></div><div class="detail-item"><span class="detail-label">Falecimento</span><span class="detail-value">${deathInfo}</span></div><div class="detail-item"><span class="detail-label">Ver no FamilySearch</span><span class="detail-value"><a href="https://www.familysearch.org/tree/person/details/${nodeData.pid || nodeData.id}" target="_blank" rel="noopener noreferrer">Abrir perfil</a></span></div>`; $("#detailsPanel").classList.add("open");
+        const contentDiv = $("#panelContent"); 
+        const personId = nodeData.pid || nodeData.id;
+        const birthInfo = (nodeData.birth && (nodeData.birth.date || nodeData.birth.place)) ? `${nodeData.birth.date || '...'} em ${nodeData.birth.place || '...'}` : '<i>indisponível</i>'; 
+        const deathInfo = (nodeData.death && (nodeData.death.date || nodeData.death.place)) ? `${nodeData.death.date || '...'} em ${nodeData.death.place || '...'}` : '<i>indisponível</i>'; 
+        
+        // <<< INÍCIO DA MODIFICAÇÃO >>>
+        contentDiv.innerHTML = `
+            <h3>${nodeData.name || '...'}</h3>
+            <div class="detail-item">
+                <span class="detail-label">ID</span>
+                <span class="detail-value">${personId}</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Género</span>
+                <span class="detail-value">${nodeData.gender || '...'}</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Nascimento</span>
+                <span class="detail-value">${birthInfo}</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Falecimento</span>
+                <span class="detail-value">${deathInfo}</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Ver no FamilySearch</span>
+                <span class="detail-value">
+                    <a href="https://www.familysearch.org/tree/person/details/${personId}" target="_blank" rel="noopener noreferrer">Abrir perfil</a>
+                </span>
+            </div>
+            <hr class="my-3">
+            <div class="d-grid">
+                <button id="btnExpandPerson" class="btn btn-outline-primary" data-pid="${personId}">
+                    <i class="bi bi-arrows-angle-expand"></i> Expandir Parentes
+                </button>
+            </div>
+            <div id="expandLoader" class="text-center text-muted small mt-2" style="display:none;">
+                Buscando parentes no FamilySearch...
+            </div>
+        `;
+        
+        // Adiciona o listener para o novo botão
+        $("#btnExpandPerson").addEventListener("click", expandPersonInGraph);
+        // <<< FIM DA MODIFICAÇÃO >>>
+        
+        $("#detailsPanel").classList.add("open");
+    }
+	
+	async function expandPersonInGraph(event) {
+        const btn = event.currentTarget;
+        const pid = btn.dataset.pid;
+        const loader = $("#expandLoader");
+        
+        if (!pid || !_currentFamilySlug || !_currentSnapshotData) {
+            showToast("Erro: Dados do snapshot ou pessoa não carregados.");
+            return;
+        }
+
+        btn.disabled = true;
+        loader.style.display = 'block';
+
+        try {
+            const r = await fetch(`/snapshot/${_currentFamilySlug}/person/${pid}/expand`, {credentials: "include"});
+            if (r.status === 401) { window.location.href = "/"; return; }
+
+            const res = await r.json();
+            
+            if (res.ok && res.new_elements) {
+                const newNodes = res.new_elements.nodes || [];
+                const newEdges = res.new_elements.edges || [];
+
+                if (newNodes.length === 0) {
+                    showToast("Nenhum parente novo encontrado para esta pessoa.");
+                    return;
+                }
+
+                // 1. Adiciona os novos elementos aos dados do snapshot atual
+                _currentSnapshotData.elements.nodes.push(...newNodes);
+                _currentSnapshotData.elements.edges.push(...newEdges);
+                
+                // 2. Atualiza a lista de autocompletar (para o 'Encontrar Parentesco')
+                const newPeople = newNodes.map(n => n.data || n).map(p => ({ id: p.id, name: `${p.name} (${p.id})` }));
+                _currentSnapshotPeople.push(...newPeople);
+                _currentSnapshotPeople.sort((a, b) => a.name.localeCompare(b.name));
+
+                // 3. Redesenha a árvore
+                // (Usamos o 'rootId' original, o D3 vai descobrir os novos caminhos)
+                drawSnapshot(_currentSnapshotData, _currentSnapshotData.kinship_path || []);
+                
+                showToast(`${newNodes.length} ${newNodes.length > 1 ? 'novos parentes adicionados' : 'novo parente adicionado'}!`);
+                
+                // Fecha o painel após a expansão
+                $("#detailsPanel").classList.remove("open");
+
+            } else {
+                showToast(`Erro ao expandir: ${res.error || 'Erro desconhecido'}`);
+            }
+
+        } catch (e) {
+            console.error("Erro ao expandir pessoa:", e);
+            showToast("Erro de comunicação ao tentar expandir.");
+        } finally {
+            btn.disabled = false;
+            loader.style.display = 'none';
+        }
     }
     
     function drawSnapshot(snapshotData, kinshipPath = []) {
